@@ -9,8 +9,7 @@ War Thunder Skin Editor의 작업 흐름을 참고해 독립적으로 만든 첫
 
 A local World of Warships PC skin editor with Korean and English UI. Download the
 Windows portable ZIP from Releases, extract it, and run `Start-Workshop.cmd`.
-Python, Pillow and the extraction engine are included; Toolbox and a pre-unpacked
-game folder are not required. An installed World of Warships PC client is required.
+The editor automatically detects the installed World of Warships folder.
 Choose **English** in the language selector to use English UI and ship names from
 the game's English `global.mo`.
 
@@ -28,8 +27,8 @@ Windows에서 [Start-Workshop.cmd](Start-Workshop.cmd)를 두 번 클릭하세�
 
 **포터블 배포본**은 릴리스의 `WoWS_Skin_Editor-v0.1-Windows.zip`을 풀고 그 안의
 `Start-Workshop.cmd`를 실행하세요. Python과 Pillow, 추출 엔진이 함께 들어 있어서
-Toolbox·Python·PowerShell 설치나 사전 언팩 없이 사용할 수 있어요.
-게임 자체는 PC에 설치되어 있어야 해요. 인터넷 연결이나 에셋 다운로드는 사용하지 않아요.
+설치된 월드오브워쉽 경로를 자동으로 탐지합니다.
+인터넷 연결이나 에셋 다운로드는 사용하지 않아요.
 
 아래 명령은 소스 코드로 실행할 때만 필요해요. Python 3.10 이상을 사용하세요.
 
