@@ -23,7 +23,6 @@ included. See [third-party notices](THIRD_PARTY_NOTICES.md) for bundled componen
 
 Windows에서 [Start-Workshop.cmd](Start-Workshop.cmd)를 두 번 클릭하세요.
 서버가 켜지고 기본 브라우저에서 <http://127.0.0.1:8766>이 열려요.
-현재 PC에서는 Codex에 포함된 Python과 Pillow를 자동으로 찾아 사용해요.
 
 **포터블 배포본**은 릴리스의 `WoWS_Skin_Editor-v0.1-Windows.zip`을 풀고 그 안의
 `Start-Workshop.cmd`를 실행하세요. 설치된 월드오브워쉽 경로를 자동으로 탐지합니다.
