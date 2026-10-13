@@ -1,7 +1,6 @@
 # WoWS Skin Editor v0.1
 
 설치된 월드 오브 워쉽에서 함선을 골라 3D로 보면서 텍스처를 편집하는 로컬 작업대예요.
-War Thunder Skin Editor의 작업 흐름을 참고해 독립적으로 만든 첫 버전이에요.
 
 [Windows 포터블 다운로드 / Download v0.1](https://github.com/Ch0m1n/WoWS_Skin_Editor/releases/tag/v0.1)
 
