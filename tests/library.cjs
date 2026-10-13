@@ -15,7 +15,7 @@ async function wait(job){for(let i=0;i<600;i++){const j=await api('jobs/'+job);i
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH||undefined,args:['--enable-unsafe-swiftshader']});
   const page=await browser.newPage({viewport:{width:1600,height:1000}});
   try{
-    await page.goto(base);await page.locator('#open-model').click();await page.waitForFunction(()=>document.querySelectorAll('.ship-card').length>20);
+    await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(base);await page.locator('#open-model').click();await page.waitForFunction(()=>document.querySelectorAll('.ship-card').length>20);
     await page.locator('#nation-tabs button').filter({hasText:'일본'}).click();assert(await page.locator('.ship-card').count());
     await page.locator('#ship-search').fill('PJSC769');assert.equal(await page.locator('.ship-card').count(),1);
     await page.waitForFunction(()=>[...document.querySelectorAll('.ship-card img')].every(img=>img.complete&&img.naturalWidth>0));

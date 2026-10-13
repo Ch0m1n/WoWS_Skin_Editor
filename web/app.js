@@ -14,7 +14,7 @@ import {snapshot, capturePaint, restoreSnapshot, historyBytes} from './history.j
 import {paintStroke} from './brush.js';
 import {setupWorkshopTools} from './workshop-tools.js';
 import {setupPartMask} from './part-mask.js';
-import {initI18n, t, language} from './i18n.js';
+import {initI18n, t, language, showFirstLanguageChoice} from './i18n.js';
 import {parseCamouflageXML as parseXML, serializeCamouflageXML, MAX_CAMOUFLAGE_XML_BYTES} from './camouflage-xml.js';
 
 const $ = id => document.getElementById(id);
@@ -874,4 +874,6 @@ syncUndo(); syncProperties(); resize();
 window.workshop = {get state() { return state; }, get renderer() { return renderer; }, get camera() { return camera; }, get model() { return model; }, projectData};
 const restartBackup=localStorage.getItem('workshop.restartBackup');if(restartBackup){localStorage.removeItem('workshop.restartBackup');api('read-backup',{id:restartBackup}).then(r=>r.json()).then(openProject).catch(report);}
 initI18n();
-$('ui-language').onchange=action(async()=>{const next=$('ui-language').value;if(!await saveDraft()){$('ui-language').value=language;throw Error(t('finishEditBeforeBackup'));}if(state.backupId)localStorage.setItem('workshop.restartBackup',state.backupId);localStorage.setItem('workshop.language',next);state.dirty=false;location.reload();});
+async function changeLanguage(next){if(!await saveDraft()){$('ui-language').value=language;throw Error(t('finishEditBeforeBackup'));}if(state.backupId)localStorage.setItem('workshop.restartBackup',state.backupId);localStorage.setItem('workshop.language',next);state.dirty=false;location.reload();}
+$('ui-language').onchange=action(()=>changeLanguage($('ui-language').value));
+showFirstLanguageChoice(changeLanguage);

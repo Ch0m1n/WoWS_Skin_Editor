@@ -129,6 +129,17 @@ export function t(key, params={}) {
   let value = messages[key]?.[language] || (language==='en'?en[key]:null) || key;
   return value.replace(/\{(\w+)\}/g,(_,name)=>params[name]??`{${name}}`);
 }
+export function showFirstLanguageChoice(onChoose){
+  if(['ko','en'].includes(localStorage.getItem('workshop.language')))return;
+  const dialog=document.getElementById('language-dialog'),buttons=[...dialog.querySelectorAll('[data-language-choice]')];
+  dialog.addEventListener('cancel',event=>event.preventDefault());
+  for(const button of buttons)button.onclick=async()=>{
+    buttons.forEach(b=>b.disabled=true);
+    try{await onChoose(button.dataset.languageChoice);}
+    catch(error){buttons.forEach(b=>b.disabled=false);document.getElementById('language-choice-error').textContent=error.message;}
+  };
+  dialog.showModal();
+}
 export function initI18n(){
   document.documentElement.lang=language;const selector=document.getElementById('ui-language');selector.value=language;
   selector.onchange=()=>{if(window.workshop?.state.dirty&&!confirm(language==='en'?'Save your project before switching languages. Switch now?':'언어를 바꾸면 화면을 다시 열어요. 저장하지 않은 작업을 두고 전환할까요?')){selector.value=language;return;}localStorage.setItem('workshop.language',selector.value);location.reload();};
@@ -136,7 +147,7 @@ export function initI18n(){
   function translate(root){
     if(root.nodeType===3){if(root.parentElement?.closest('input,textarea,#ship-name,.ship-card strong,.layer-label,.material-card'))return;const raw=root.nodeValue,key=raw.trim();let value=t(key);if(value===key){value=key.replace(/^(선체|무장|대공포|항공기|기타) · /,(_,name)=>t(name)+' · ').replace(/개 부품 공유/g,'shared parts');}if(value!==key)root.nodeValue=raw.replace(key,value);return;}
     if(root.nodeType!==1)return;
-    if(root.tagName==='SCRIPT'||root.tagName==='STYLE')return;
+    if(root.tagName==='SCRIPT'||root.tagName==='STYLE'||root.id==='language-dialog')return;
     for(const name of ['title','aria-label','placeholder'])if(root.hasAttribute(name)){const value=root.getAttribute(name);root.setAttribute(name,t(value));}
     for(const child of [...root.childNodes])translate(child);
   }

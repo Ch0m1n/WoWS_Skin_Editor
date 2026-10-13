@@ -10,7 +10,7 @@ const path = require('node:path');
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   try {
-    await page.goto(process.env.WORKSHOP_URL || 'http://127.0.0.1:8765'); await page.waitForLoadState('networkidle');
+    await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(process.env.WORKSHOP_URL || 'http://127.0.0.1:8765'); await page.waitForLoadState('networkidle');
     await page.locator('#open-model').click();
     await page.locator('#model-dialog').waitFor({state: 'visible'});
     await page.locator('.local-model-options summary').click();

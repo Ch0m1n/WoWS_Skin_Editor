@@ -25,7 +25,7 @@ function embeddedGLB(png) {
   const page=await browser.newPage({acceptDownloads:true}); const errors=[]; page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept());
   try {
-    await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8766');
+    await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8766');
     const png=await page.evaluate(()=>{const c=document.createElement('canvas'); c.width=c.height=32;const x=c.getContext('2d');x.fillStyle='#678abc';x.fillRect(0,0,32,32);return c.toDataURL().split(',')[1];});
     await page.locator('#glb-file').setInputFiles({name:'embedded.glb',mimeType:'model/gltf-binary',buffer:embeddedGLB(Buffer.from(png,'base64'))});
     await page.waitForFunction(()=>workshop.state.meshes.length===1&&document.querySelector('#busy').hidden);

@@ -2,7 +2,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
 (async()=>{
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH,args:['--enable-unsafe-swiftshader']});
   try{
-    const page=await browser.newPage({viewport:{width:1050,height:800}});await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8770');
+    const page=await browser.newPage({viewport:{width:1050,height:800}});await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8770');
     await page.locator('#brush-settings-open').click();
     assert(await page.locator('#brush-settings-dialog').isVisible());
     assert(await page.evaluate(()=>{const d=document.getElementById('brush-settings-dialog'),r=d.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&d.scrollHeight<=d.clientHeight;}),'Settings fit without nested scrolling');

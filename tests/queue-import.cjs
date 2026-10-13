@@ -4,7 +4,7 @@ const base=process.env.WORKSHOP_URL||'http://127.0.0.1:8767';
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH,args:['--enable-unsafe-swiftshader']}),page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   try{
-    await page.goto(base);await page.locator('#open-model').click();await page.locator('.local-model-options summary').click();await page.locator('.model-card').filter({hasText:'Ōta'}).click();
+    await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(base);await page.locator('#open-model').click();await page.locator('.local-model-options summary').click();await page.locator('.model-card').filter({hasText:'Ōta'}).click();
     await page.waitForFunction(()=>workshop.state.meshes.length&&document.querySelector('#busy').hidden,null,{timeout:90000});
     const before=await page.evaluate(()=>workshop.state.source.id);let issued=[],jobs=[];
     await page.route('**/api/preparations',r=>r.fulfill({json:{jobs}}));

@@ -2,7 +2,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
 (async()=>{
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH,args:['--enable-unsafe-swiftshader']});
   try{
-    const page=await browser.newPage();await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8771');
+    const page=await browser.newPage();await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8771');
     const parser=await page.evaluate(async()=>{
       const {parseCamouflageXML:parse,serializeCamouflageXML:save}=await import('/camouflage-xml.js');
       const source='<data><!-- __wows_mod_tag_ and <507C_group> --><507C_group><ships>A B</ships></507C_group><note><![CDATA[<507C_group>]]></note><colorScheme><name>custom</name><color0>0 0 0 9</color0></colorScheme><ref>507C_group</ref></data>';

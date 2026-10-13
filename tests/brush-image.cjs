@@ -3,7 +3,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH,args:['--enable-unsafe-swiftshader']});
   const page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   try{
-    await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8766');await page.locator('#open-model').click();await page.locator('.local-model-options summary').click();await page.locator('.model-card').filter({hasText:'Ōta'}).click();
+    await page.addInitScript(()=>{if(!['ko','en'].includes(localStorage.getItem('workshop.language')))localStorage.setItem('workshop.language','ko');});await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8766');await page.locator('#open-model').click();await page.locator('.local-model-options summary').click();await page.locator('.model-card').filter({hasText:'Ōta'}).click();
     await page.waitForFunction(()=>workshop.state.meshes.length&&document.querySelector('#busy').hidden,null,{timeout:90000});
     await page.locator('[data-axis=front]').click();
     assert(await page.evaluate(()=>workshop.state.meshes.every(m=>m.geometry.boundsTree)),'Real ship meshes have a spatial picking index');
