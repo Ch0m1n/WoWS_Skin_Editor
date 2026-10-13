@@ -169,8 +169,6 @@ python -m unittest discover -s tests -p "test_*.py"
 - `web/app.js`: 모델과 편집 작업 흐름
 - `web/document.js`: 레이어 합성과 프로젝트 직렬화
 - `web/projection.js`: 3D 평면 이미지를 UV로 구워 넣기
-- `research/wt-editor/FEATURE_REVIEW.md`: 참고 에디터의 기능 조사
 - `THIRD_PARTY_NOTICES.md`: 포함된 외부 라이브러리
 
-War Thunder Skin Editor의 소스 코드는 이 앱에 포함하지 않았어요.
 게임 에셋과 사용자가 불러오는 모델·이미지의 권리는 각 권리자에게 있어요.
