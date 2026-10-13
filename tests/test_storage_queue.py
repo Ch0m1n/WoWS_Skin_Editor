@@ -50,6 +50,24 @@ class StorageQueueTests(unittest.TestCase):
             with self.assertRaises(ValueError):g.cache_control({'id':identity,'action':'delete','protected':str(folder)})
             with self.assertRaises(ValueError):g.cache_control({'id':'../outside','action':'delete'})
             g.cache_control({'id':identity,'action':'delete'});self.assertFalse(folder.exists())
+    def test_clear_model_cache_preserves_open_model_and_unrelated_data(self):
+        opened=self.root/('a'*16)/'123/models/AAAA123';old=self.root/('engine-'+'b'*16)/('a'*16)/'122/models/BBBB123'
+        for folder in (opened,old):folder.mkdir(parents=True);(folder/'model.obj').write_text('mesh')
+        backup=self.root/'backups/project.json';backup.parent.mkdir();backup.write_text('saved')
+        with patch.object(g,'CACHE',self.root),patch.dict(g.JOBS,{},clear=True):
+            result=g.cache_control({'action':'clear','protected':str(opened)})
+        self.assertEqual(result['deleted'],1);self.assertEqual(result['protected'],1)
+        self.assertTrue((opened/'model.obj').is_file());self.assertFalse(old.exists());self.assertTrue(backup.is_file())
+
+    def test_clear_model_cache_blocks_jobs_and_preflights_all_paths(self):
+        valid=self.root/('a'*16)/'123/models/AAAA123';valid.mkdir(parents=True);(valid/'model.obj').write_text('mesh')
+        with patch.object(g,'CACHE',self.root),patch.dict(g.JOBS,{'fixture':{'status':'queued'}},clear=True):
+            with self.assertRaises(ValueError):g.cache_control({'action':'clear'})
+        self.assertTrue(valid.exists())
+        bad=self.root/('a'*16)/'123/models/not-a-ship';bad.mkdir();(bad/'data.txt').write_text('keep')
+        with patch.object(g,'CACHE',self.root),patch.dict(g.JOBS,{},clear=True):
+            with self.assertRaises(ValueError):g.cache_control({'action':'clear'})
+        self.assertTrue(valid.exists());self.assertTrue(bad.exists())
     def test_paused_owned_process_stops_and_resumes(self):
         target=self.root/'ticks.txt';entered=threading.Event()
         command=[sys.executable,'-c',f'import time; f=open({str(target)!r},"a");\nwhile True: f.write("x"); f.flush(); time.sleep(.03)']

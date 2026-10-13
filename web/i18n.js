@@ -1,6 +1,7 @@
 // Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
 export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
 const messages = {
+  '추출 대기열과 진행 중인 준비 작업을 먼저 취소하세요.':{ko:'추출 대기열과 진행 중인 준비 작업을 먼저 취소하세요.',en:'Cancel queued and active preparation jobs before clearing caches.'},
   xmlExternalEntities:{ko:'외부 엔터티 선언이 있는 XML은 지원하지 않아요.',en:'XML containing DTD or entity declarations is not supported.'},
   xmlInvalidSyntax:{ko:'XML 문법을 확인하세요. 닫히지 않은 태그나 잘못된 문자가 있어요.',en:'Check the XML syntax for unclosed tags or invalid characters.'},
   xmlMissingSchemes:{ko:'colorScheme 항목이 없는 XML이에요.',en:'This XML has no colorScheme entries.'},

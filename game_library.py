@@ -206,6 +206,20 @@ def list_model_cache():
     return rows
 
 def cache_control(payload):
+    if payload.get('action')=='clear':
+        with LOCK:
+            if any(j['status'] in ('queued','running','paused','cancelling') for j in JOBS.values()):
+                raise ValueError('추출 대기열과 진행 중인 준비 작업을 먼저 취소하세요.')
+            models=list_model_cache();protected=Path(payload['protected']).resolve() if payload.get('protected') else None
+            targets=[m for m in models if Path(m['folder']).resolve()!=protected]
+            root=(BASE_CACHE if CACHE.parent==BASE_CACHE else CACHE).resolve()
+            # Validate every target before removing anything; never delete the cache root.
+            for model in targets:
+                folder=Path(model['folder'])
+                if not re.fullmatch(r'(?:engine-[a-f0-9]{16}/)?[a-f0-9]{16}/[0-9]+/models/[A-Z0-9_]{4,40}',model['id']) or not folder.resolve().is_relative_to(root) or any(p.is_symlink() for p in [folder,*folder.parents] if p!=root.parent):
+                    raise ValueError('캐시 경로가 올바르지 않아요.')
+            for model in targets:cache_control({'id':model['id'],'action':'delete','protected':payload.get('protected')})
+            return {'deleted':len(targets),'bytes':sum(m['bytes'] for m in targets),'protected':len(models)-len(targets)}
     if payload.get('action') not in ('delete','reextract'):raise ValueError('캐시 작업이 올바르지 않아요.')
     identity=payload.get('id','')
     if not re.fullmatch(r'(?:engine-[a-f0-9]{16}/)?[a-f0-9]{16}/[0-9]+/models/[A-Z0-9_]{4,40}',identity):raise ValueError('캐시 ID가 올바르지 않아요.')
