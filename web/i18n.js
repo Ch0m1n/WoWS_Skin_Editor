@@ -1,6 +1,20 @@
 // Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
 export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
 const messages = {
+  errorLog:{ko:'오류 로그',en:'Error log'},
+  errorLogEmpty:{ko:'기록된 오류가 없어요.',en:'No errors recorded.'},
+  errorOriginal:{ko:'원본 로그',en:'Original log'},
+  errorCopy:{ko:'로그 복사',en:'Copy log'},errorCopied:{ko:'복사했어요',en:'Copied'},errorCopyFailed:{ko:'복사 실패 · 원본 로그를 선택해 복사하세요',en:'Copy failed · select and copy the original log'},
+  errorNetwork:{ko:'서버에 연결하지 못했어요. 실행 창을 확인하고 다시 시도하세요.',en:'Could not connect to the server. Check that it is running and try again.'},
+  errorBackup:{ko:'자동 복구 저장에 실패했어요. 프로젝트를 파일로 저장하고 원본 로그를 확인하세요.',en:'Automatic backup failed. Save your project to a file and check the original log.'},
+  errorUnknown:{ko:'작업을 완료하지 못했어요. 원본 로그를 확인하세요.',en:'The operation could not be completed. Check the original log for details.'},
+  '오류 로그':{ko:'오류 로그',en:'Error log'},'최근 100개 · 현재 실행 중의 기록':{ko:'최근 100개 · 현재 실행 중의 기록',en:'Last 100 entries · current session'},'로그 비우기':{ko:'로그 비우기',en:'Clear log'},'로그 보기':{ko:'로그 보기',en:'View log'},
+  shipCached:{ko:'추출 완료 · 바로 열기',en:'Prepared · ready to open'},shipCacheStale:{ko:'이전 추출본 · 재준비 필요',en:'Previous export · refresh needed'},
+  shipPreparedOnly:{ko:'추출 완료만',en:'Prepared only'},
+  '요청을 처리하지 못했어요.':{ko:'요청을 처리하지 못했어요.',en:'The request could not be completed.'},
+  '모델 폴더를 찾을 수 없어요.':{ko:'모델 폴더를 찾을 수 없어요.',en:'The model folder could not be found.'},
+  '폴더에 OBJ 또는 GLB 모델이 없어요.':{ko:'폴더에 OBJ 또는 GLB 모델이 없어요.',en:'The folder contains no OBJ or GLB model.'},
+  'idx와 res_packages가 있는 워쉽 설치 폴더를 선택하세요.':{ko:'idx와 res_packages가 있는 워쉽 설치 폴더를 선택하세요.',en:'Select a World of Warships installation containing idx and res_packages.'},
   '추출 대기열과 진행 중인 준비 작업을 먼저 취소하세요.':{ko:'추출 대기열과 진행 중인 준비 작업을 먼저 취소하세요.',en:'Cancel queued and active preparation jobs before clearing caches.'},
   xmlExternalEntities:{ko:'외부 엔터티 선언이 있는 XML은 지원하지 않아요.',en:'XML containing DTD or entity declarations is not supported.'},
   xmlInvalidSyntax:{ko:'XML 문법을 확인하세요. 닫히지 않은 태그나 잘못된 문자가 있어요.',en:'Check the XML syntax for unclosed tags or invalid characters.'},
@@ -148,7 +162,7 @@ export function initI18n(){
   function translate(root){
     if(root.nodeType===3){if(root.parentElement?.closest('input,textarea,#ship-name,.ship-card strong,.layer-label,.material-card'))return;const raw=root.nodeValue,key=raw.trim();let value=t(key);if(value===key){value=key.replace(/^(선체|무장|대공포|항공기|기타) · /,(_,name)=>t(name)+' · ').replace(/개 부품 공유/g,'shared parts');}if(value!==key)root.nodeValue=raw.replace(key,value);return;}
     if(root.nodeType!==1)return;
-    if(root.tagName==='SCRIPT'||root.tagName==='STYLE'||root.id==='language-dialog')return;
+    if(root.tagName==='SCRIPT'||root.tagName==='STYLE'||root.id==='language-dialog'||root.matches('#error-log-list pre'))return;
     for(const name of ['title','aria-label','placeholder'])if(root.hasAttribute(name)){const value=root.getAttribute(name);root.setAttribute(name,t(value));}
     for(const child of [...root.childNodes])translate(child);
   }

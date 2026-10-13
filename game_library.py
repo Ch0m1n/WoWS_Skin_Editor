@@ -192,6 +192,24 @@ def restore_queue():
             except (OSError,ValueError,KeyError):continue
     threading.Thread(target=restore,daemon=True).start()
 
+def prepared_ships(key):
+    """Read completion markers only; never walk texture files for catalog badges."""
+    game_dir(key)
+    statuses = {}
+    current_build = str(GAMES[key]['build'])
+    folders = list(BASE_CACHE.glob(f'{key}/*/models/*'))
+    folders += list(BASE_CACHE.glob(f'engine-*/{key}/*/models/*'))
+    for folder in folders:
+        if folder.is_symlink(): continue
+        try:
+            metadata = json.loads((folder / 'ready.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError): continue
+        code = folder.name
+        if metadata.get('code') != code or not (folder / f'{code}.obj').is_file(): continue
+        ready = folder.parent.parent.name == current_build and metadata.get('engine') == ENGINE_ID and folder == cache_dir(key) / 'models' / code
+        if ready or code not in statuses: statuses[code] = 'ready' if ready else 'stale'
+    return statuses
+
 def list_model_cache():
     rows=[]
     root=BASE_CACHE if CACHE.parent==BASE_CACHE else CACHE

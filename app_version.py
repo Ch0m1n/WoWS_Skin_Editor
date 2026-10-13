@@ -1,7 +1,7 @@
 from pathlib import Path
 import hashlib
 
-VERSION = '0.2.4'
+VERSION = '0.2.5'
 ROOT = Path(__file__).resolve().parent
 _files = [ROOT / n for n in ('server.py', 'game_library.py', 'project_store.py', 'app_version.py')]
 _files += sorted((ROOT / 'web').glob('*.js')) + sorted((ROOT / 'web').glob('*.html')) + sorted((ROOT / 'web').glob('*.css'))

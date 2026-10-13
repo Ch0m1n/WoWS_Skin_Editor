@@ -15,9 +15,12 @@ import {paintStroke} from './brush.js';
 import {setupWorkshopTools} from './workshop-tools.js';
 import {setupPartMask} from './part-mask.js';
 import {initI18n, t, language, showFirstLanguageChoice} from './i18n.js';
+import {setupErrorLog} from './error-log.js';
 import {parseCamouflageXML as parseXML, serializeCamouflageXML, MAX_CAMOUFLAGE_XML_BYTES} from './camouflage-xml.js';
 
 const $ = id => document.getElementById(id);
+const errorButton=document.createElement('button');errorButton.id='error-log-toggle';errorButton.setAttribute('aria-controls','error-log-panel');errorButton.setAttribute('aria-expanded','false');document.querySelector('.identity').after(errorButton);
+const errorLog=setupErrorLog();
 const state = {source: null, docs: new Map(), meshes: [], activeDoc: null, activeLayer: null, selectedMesh: null,
   tool: 'orbit', image: null, imageName: '', channel: 'albedo', undo: [], redo: [], dirty: false, xml: null, xmlName: 'camouflages.xml', xmlDirty: false, xmlLabels:{}};
 let model = null, zoom = 'fit', stroke = null, imageDrag = null, autosaveTimer = 0, loading = false;
@@ -43,7 +46,7 @@ const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
 const size = new THREE.Vector3(), center = new THREE.Vector3();
 let extent = 20;
 
-function message(text, error = false) { $('status').textContent = t(text); $('status').style.color = error ? '#f5a5a0' : ''; }
+function message(text, error = false) { $('status').textContent = error ? errorLog.add(text) : t(text); $('status').style.color = error ? '#f5a5a0' : ''; }
 function busy(value, label = '모델을 불러오는 중이에요.') { loading = value; $('busy').hidden = !value; $('busy-label').textContent = label; }
 async function api(path, payload) {
   let options={};if(payload){let body=JSON.stringify(payload);const headers={'Content-Type':'application/json'};if(body.length>8*1024*1024&&typeof CompressionStream!=='undefined'){body=await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob();headers['Content-Encoding']='gzip';}options={method:'POST',headers,body};}
@@ -51,7 +54,9 @@ async function api(path, payload) {
   if (!response.ok) { const data = await response.json(); throw Error(data.error || '요청을 처리하지 못했어요.'); }
   return response;
 }
-function report(error) { console.error(error); message(error.message || String(error), true); }
+function report(error) { console.error(error); $('status').textContent=errorLog.add(error);$('status').style.color='#f5a5a0'; }
+window.addEventListener('error',event=>{if(event.error)report(event.error);});
+window.addEventListener('unhandledrejection',event=>report(event.reason));
 function action(fn) { return (...args) => Promise.resolve().then(() => fn(...args)).catch(report); }
 function current() { return state.docs.get(state.activeDoc); }
 function layer() { return current()?.layers.find(row => row.id === state.activeLayer); }

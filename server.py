@@ -240,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'backups':project_store.list_backups()})
             if path == '/api/cache':
                 return self.json({'models':game_library.list_model_cache()})
+            if path.startswith('/api/prepared-ships/'):
+                return self.json({'ships':game_library.prepared_ships(path.rsplit('/',1)[-1])})
             if path == '/api/queue-state':
                 return self.json({'paused':game_library.PAUSED, 'order':game_library.QUEUE_ORDER})
             if path == '/api/library':
