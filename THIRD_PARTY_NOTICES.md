@@ -1,5 +1,10 @@
 # Third-party notices
 
+This application includes three-mesh-bvh 0.9.16 (MIT), by Garrett Johnson,
+from https://github.com/gkjohnson/three-mesh-bvh. Its license is retained in
+`web/vendor/three-mesh-bvh/LICENSE`. Its Three.js import uses a local relative path
+so the bundled module also loads in the geometry preparation worker.
+
 This application includes Three.js 0.185.1, distributed under the MIT License.
 
 - Project: https://github.com/mrdoob/three.js
@@ -10,9 +15,6 @@ The backend uses Pillow, installed separately by the Python environment.
 
 - Project: https://python-pillow.github.io/
 - License: https://github.com/python-pillow/Pillow/blob/main/LICENSE
-
-The War Thunder Skin Editor repository was inspected for product research. Its code
-and executable are not included in the workshop application.
 
 Game models and textures are loaded from folders selected by the user; they are not
 distributed with this application.

@@ -4,16 +4,18 @@ const NATIONS = ['일본','미국','소련','독일','영국','프랑스','이�
 const CLASSES = ['전함','순양함','구축함','항공모함','잠수함','보조함'];
 export class ShipLibrary {
   constructor(api, load, report) {
-    Object.assign(this,{api,load,report,ships:[],nation:'전체',type:'전체',page:0,request:0,selected:new Set(),jobs:[]});
+    Object.assign(this,{api,load,report,ships:[],nation:'전체',type:'전체',page:0,request:0,selected:new Set(),jobs:[],activeShip:null,activeJob:null});
     const host=document.createElement('section'); host.className='game-library';
     host.innerHTML='<div class="game-settings"><label>워쉽 설치 폴더<select id="game-install"></select></label><button id="rescan-games">다시 감지</button><button id="refresh-ships">목록 갱신</button></div><div class="game-path"><input id="game-folder" placeholder="자동 감지되지 않으면 설치 폴더를 입력하세요"><button id="set-game-folder">폴더 지정</button></div><p id="catalog-status" role="status">게임 설치 폴더를 찾는 중이에요.</p><div id="nation-tabs" class="nation-tabs"></div><div class="ship-filters"><select id="ship-class" aria-label="함종"></select><input id="ship-search" placeholder="함선 이름 또는 코드 검색"></div><div id="ship-catalog" class="ship-catalog"></div><div class="catalog-pages"><button id="ships-prev">이전</button><span id="ship-count"></span><button id="ships-next">다음</button></div><details class="local-model-options"><summary>기존 추출 모델 · 직접 파일 열기</summary><div id="local-model-host"></div></details>';
     const dialog=$('model-dialog');dialog.classList.add('ship-browser');dialog.insertBefore(host,$('model-library'));
     const progress=document.createElement('div');progress.id='ship-preparation';progress.hidden=true;
     progress.innerHTML='<progress id="ship-progress" max="100" aria-label="'+t('preparationProgress')+'"></progress><span id="ship-progress-details" role="status"></span>';
     $('catalog-status').after(progress);
+    const cancel=document.createElement('button');cancel.id='cancel-ship-preparation';cancel.textContent=t('cancelPreparation');cancel.onclick=()=>this.cancel(this.activeJob).catch(report);progress.append(cancel);
     const batch=document.createElement('div');batch.className='batch-preparation';batch.innerHTML=`<button id="prepare-selected">${t('prepareSelected')}</button><button id="clear-preselection">${t('clearPreselection')}</button><span id="preselection-count"></span><details id="preparation-queue"><summary>${t('preparationQueue')}</summary><div id="preparation-jobs"></div></details>`;$('ship-catalog').before(batch);
     const badge=document.createElement('button');badge.id='preparation-summary';badge.textContent=t('preparationQueue');badge.onclick=()=>{ $('open-model').click();$('preparation-queue').open=true;};$('geometry-info').before(badge);
     $('prepare-selected').onclick=()=>this.prepareSelected().catch(report);$('clear-preselection').onclick=()=>{this.selected.clear();this.render();};
+    const open=document.createElement('button');open.id='open-selected-ship';open.className='accent';open.disabled=true;open.textContent=t('openSelectedShip');open.onclick=()=>this.openSelected().catch(report);batch.prepend(open);
     this.refreshQueue().catch(()=>{});setInterval(()=>this.refreshQueue().catch(()=>{}),2500);
     const local=$('local-model-host'); let node=$('model-library'); while(node){const next=node.nextElementSibling;local.append(node);node=next;}
     $('ship-class').replaceChildren(...['전체',...CLASSES].map(n=>new Option(n==='전체'?'전체 함종':n,n)));
@@ -29,11 +31,11 @@ export class ShipLibrary {
   async open(refresh=false){
     if(this.games&&!refresh)return;
     this.games=(await(await this.api('games')).json()).games;this.renderGames();
-    if(this.games.length)await this.selectGame();else $('catalog-status').textContent='워쉽 설치 폴더를 지정해주세요. 사전 언팩이나 Toolbox 설치는 필요하지 않아요.';
+    if(this.games.length)await this.selectGame();else $('catalog-status').textContent=t('chooseGameFolder');
   }
   async wait(job,output,token){
     while(true){const value=await(await this.api('jobs/'+job)).json();if(token!==undefined&&token!==this.request)return null;
-      output(value.message,value);if(value.status==='error')throw Error(value.message);if(value.status==='done')return value.result;
+      output(value.message,value);if(value.status==='cancelled')return null;if(value.status==='error')throw Error(value.message);if(value.status==='done')return value.result;
       await new Promise(resolve=>setTimeout(resolve,800));}
   }
   showPreparation(value) {
@@ -46,12 +48,23 @@ export class ShipLibrary {
   }
   async refreshQueue(){
     const {jobs}=await(await this.api('preparations')).json();this.jobs=jobs;
-    const active=jobs.filter(j=>['queued','running'].includes(j.status));$('preparation-summary').textContent=t('queueSummary',{count:active.length});
-    $('preparation-jobs').replaceChildren(...jobs.slice().reverse().map(job=>{const row=document.createElement('div');row.className='preparation-job';row.textContent=`${job.name} · ${t('queue'+job.status)}${job.percent!==null&&job.status==='running'?' · '+job.percent+'%':''}`;row.title=t(job.message||'');return row;}));
+    const active=jobs.filter(j=>['queued','running','cancelling'].includes(j.status));$('preparation-summary').textContent=t('queueSummary',{count:active.length});
+    $('preparation-jobs').replaceChildren(...jobs.slice().reverse().map(job=>{const row=document.createElement('div');row.className='preparation-job';row.textContent=`${job.name} · ${t('queue'+job.status)}${job.percent!==null&&job.status==='running'?' · '+job.percent+'%':''}`;row.title=t(job.message||'');if(['queued','running'].includes(job.status)){const cancel=document.createElement('button');cancel.textContent=t('cancelPreparation');cancel.onclick=()=>this.cancel(job.id).catch(this.report);row.append(cancel);}return row;}));
     for(const card of document.querySelectorAll('.ship-card')){
       const job=jobs.find(j=>j.game===this.game&&j.code===card.dataset.code),badge=card.querySelector('.ship-prepared');
       if(badge)badge.textContent=job?t('queue'+job.status):'';
     }
+  }
+  async cancel(job){if(!job)return;await this.api('cancel-preparation',{job});await this.refreshQueue();}
+  async openSelected(){
+    const ship=this.activeShip,game=this.game;if(!ship||this.preparing)return;
+    this.preparing=true;$('open-selected-ship').disabled=true;$('ship-preparation').hidden=false;$('cancel-ship-preparation').disabled=true;
+    $('ship-progress').removeAttribute('value');$('ship-progress-details').textContent=t('estimatingRemaining');
+    try{const{job}=await(await this.api('ship-model',{game,code:ship.ShipCode,language})).json();this.activeJob=job;$('cancel-ship-preparation').disabled=false;
+      const result=await this.wait(job,(message,value)=>{$('catalog-status').textContent=t(message);this.showPreparation(value);$('cancel-ship-preparation').disabled=value.status==='cancelling';});
+      if(!result)return;const source=await(await this.api('job-model',{job})).json();$('model-dialog').close();await this.load(source);
+    }catch(e){$('catalog-status').textContent=t(e.message);this.report(e);}
+    finally{this.preparing=false;this.activeJob=null;$('ship-preparation').hidden=true;$('open-selected-ship').disabled=!this.activeShip;await this.refreshQueue();}
   }
   async prepareSelected(){
     const game=this.game,codes=[...this.selected];if(!codes.length)return;$('prepare-selected').disabled=true;
@@ -59,12 +72,13 @@ export class ShipLibrary {
     finally{$('prepare-selected').disabled=!this.selected.size;}
   }
   async selectGame(refresh=false){
-    if(!$('game-install').value)return;const token=++this.request;this.game=$('game-install').value;this.selected.clear();this.ships=[];this.render();
+    if(!$('game-install').value||this.preparing)return;const token=++this.request;this.game=$('game-install').value;this.activeShip=null;this.selected.clear();this.ships=[];this.render();
     try{const{job}=await(await this.api('catalog',{game:this.game,refresh,language})).json();const result=await this.wait(job,message=>$('catalog-status').textContent=t(message),token);if(!result)return;
       this.ships=result.ships;this.nation='전체';this.page=0;$('catalog-status').textContent=t('catalogReady',{count:this.ships.length.toLocaleString(),locale:language});this.render();
     }catch(e){$('catalog-status').textContent=e.message;this.report(e);}
   }
   render(){
+    $('open-selected-ship').disabled=!this.activeShip||this.preparing;$('open-selected-ship').textContent=this.activeShip?t('openNamedShip',{name:this.activeShip.LocalizedName}):t('openSelectedShip');
     $('preselection-count').textContent=t('preselectedCount',{count:this.selected.size});$('prepare-selected').disabled=!this.selected.size;
     const nations=['전체',...NATIONS.filter(n=>this.ships.some(s=>s.Nation===n)),...new Set(this.ships.map(s=>s.Nation).filter(n=>!NATIONS.includes(n)))];
     $('nation-tabs').replaceChildren(...nations.map(n=>{const b=document.createElement('button');b.textContent=n;b.classList.toggle('active',n===this.nation);b.onclick=()=>{this.nation=n;this.page=0;this.render();};return b;}));
@@ -76,15 +90,8 @@ export class ShipLibrary {
       const ready=document.createElement('span');ready.className='ship-prepared';const previous=this.jobs.find(j=>j.game===this.game&&j.code===s.ShipCode);ready.textContent=previous?t('queue'+previous.status):'';
       const img=document.createElement('img');img.loading='lazy';img.alt='';img.src=`/api/ship-icon/${this.game}/${s.ShipCode}`;img.onerror=()=>{img.remove();b.classList.add('without-icon');};
       const strong=document.createElement('strong');strong.textContent=s.LocalizedName||s.ShipCode;const small=document.createElement('small');small.textContent=`${t('Tier')} ${s.Tier} · ${t(s.Nation)} · ${t(s.ShipClass)}`;
-      b.append(check,img,strong,small,ready);b.onclick=async()=>{
-        if(this.preparing)return;this.preparing=true;b.disabled=true;$('ship-preparation').hidden=false;
-        $('ship-progress').removeAttribute('value');$('ship-progress-details').textContent=t('estimatingRemaining');
-        try{const{job}=await(await this.api('ship-model',{game:this.game,code:s.ShipCode,language})).json();
-          await this.wait(job,(message,value)=>{$('catalog-status').textContent=t(message);this.showPreparation(value);});
-          const source=await(await this.api('job-model',{job})).json();$('model-dialog').close();await this.load(source);
-        }catch(e){$('catalog-status').textContent=t(e.message);this.report(e);}
-        finally{this.preparing=false;$('ship-preparation').hidden=true;b.disabled=!s.Supported;}
-      };return b;
+      b.classList.toggle('selected',this.activeShip?.ShipCode===s.ShipCode);b.setAttribute('aria-pressed',String(this.activeShip?.ShipCode===s.ShipCode));
+      b.append(check,img,strong,small,ready);b.onclick=()=>{if(this.preparing)return;this.activeShip=s;for(const card of $('ship-catalog').children){const selected=card.dataset.code===s.ShipCode;card.classList.toggle('selected',selected);card.setAttribute('aria-pressed',String(selected));}$('open-selected-ship').disabled=false;$('open-selected-ship').textContent=t('openNamedShip',{name:s.LocalizedName});$('catalog-status').textContent=t('shipSelected',{name:s.LocalizedName});};return b;
     }));
   }
 }

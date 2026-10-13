@@ -1,6 +1,12 @@
 // Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
 export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
 const messages = {
+  chooseGameFolder:{ko:'워쉽 설치 폴더를 지정해주세요.',en:'Choose your World of Warships installation folder.'},
+  openSelectedShip:{ko:'선택 함선 열기',en:'Open selected ship'},openNamedShip:{ko:'{name} 열기',en:'Open {name}'},
+  shipSelected:{ko:'{name} 선택됨 · 열기 버튼을 눌러 준비를 시작하세요.',en:'{name} selected · press Open to start preparation.'},
+  cancelPreparation:{ko:'준비 취소',en:'Cancel preparation'},queuecancelled:{ko:'취소됨',en:'Cancelled'},queuecancelling:{ko:'취소 중',en:'Cancelling'},
+  '함선 준비를 취소했어요.':{ko:'함선 준비를 취소했어요.',en:'Ship preparation cancelled.'},
+  resizeViewports:{ko:'3D·텍스처 화면 크기 조절',en:'Resize 3D and texture panes'},
   importSkinTextures:{ko:'외부 스킨 텍스처 가져오기',en:'Import skin textures'},
   textureImportHelp:{ko:'PNG/DDS 이름으로 재질을 찾아요. 각 파일의 적용 텍스처를 확인한 뒤 가져오세요. 원본 파일은 수정하지 않아요.',en:'Match PNG/DDS files by name, then choose their target materials. Source files remain unchanged.'},
   applyTextureImport:{ko:'편집 레이어로 가져오기',en:'Import as editable layers'},readingExternalTextures:{ko:'외부 스킨 텍스처를 읽는 중이에요.',en:'Reading external skin textures…'},
@@ -44,7 +50,7 @@ const messages = {
   imageReady:{ko:'{name} 준비됨 · 3D 표면에 놓으면 편집 가능한 이미지 레이어가 돼요. 다시 드래그해 이동하고 오른쪽에서 크기를 조절하세요.',en:'{name} ready · place it on a 3D surface as an editable image layer. Drag it again to move, or resize in the properties panel.'},
 };
 const en = {
-  '설치된 게임에서 함선을 고르세요. 사전 언팩이나 Toolbox 설치는 필요하지 않아요.':'Choose a ship from your installed game. No Toolbox installation or pre-unpacking is needed.',
+  '설치된 월드오브워쉽 경로를 자동으로 탐지합니다.':'The editor automatically detects the installed World of Warships folder.',
   '모델 열기':'Open ship','프로젝트 열기':'Open project','프로젝트 저장':'Save project','내보내기':'Export','파일 작업':'File actions',
   '함선을 불러오세요':'Choose a ship','새 프로젝트':'New project','함선 부품':'Ship parts','부품 검색':'Search parts','부품 이름 검색':'Search part names',
   '모두 표시':'Show all','선택 부품만':'Isolate part','모델을 열면 부품이 여기에 나타나요.':'Parts will appear after loading a model.',

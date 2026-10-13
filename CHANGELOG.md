@@ -23,12 +23,14 @@ ZIP을 풀고 `Start-Workshop.cmd`를 실행하세요. 설치된 월드오브워
 - Existing PNG/DDS skin import with preserved alpha and editable replacement layers.
 - PNG/DDS texture ZIP export with mipmaps and camouflage XML color editing.
 - Pure black default brush color.
+- Ship cards select without extracting; use Open to prepare, or cancel queued/running preparation.
+- Resize the 3D/texture panes by dragging their boundary.
+- Click projected images to select them; Delete removes them and Ctrl+Z restores them.
+- Empty-space, bare-surface and view-tab clicks clear image selection.
+- Shift rotation snaps image handles to preferred angles.
+- Worker-built spatial picking index and partial GPU brush updates with stable preview resolution.
 
-## Validation and limits / 검증·제한
-
-Backend: 12 unit tests passed. Browser checks passed for real-model loading,
-brush/eraser continuity, free-angle Shift lines, image transforms, camera controls,
-clipboard shortcuts, preparation queue UI, texture import, project restore and DDS export.
+## Limits / 제한
 
 Windows PC version only. PSD layer import, editing non-color material channels,
 automatic installation into `res_mods`, and in-game rendering verification are not

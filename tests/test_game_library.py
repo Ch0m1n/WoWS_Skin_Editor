@@ -10,6 +10,32 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import game_library as g
 
 class LibraryTests(unittest.TestCase):
+    def test_cancel_queued_job_does_not_run_and_can_retry(self):
+        entered=threading.Event();release=threading.Event();ran=threading.Event()
+        blocker=g.start_job('block-'+str(time.time()),lambda p:(entered.set(),release.wait(3)),serial=True)
+        self.assertTrue(entered.wait(1));signature='extract:cancel-test:'+str(time.time())
+        job=g.start_job(signature,lambda p:ran.set(),serial=True)
+        try:
+            self.assertEqual(g.cancel_job(job),'cancelled')
+        finally:release.set()
+        g.EXTRACTION_QUEUE.join();self.assertFalse(ran.is_set())
+        retry=g.start_job(signature,lambda p:{'ok':True},serial=True);g.EXTRACTION_QUEUE.join()
+        self.assertNotEqual(job,retry);self.assertEqual(g.JOBS[retry]['status'],'done')
+
+    def test_cancel_running_extraction_terminates_owned_child(self):
+        started=threading.Event()
+        def work(progress):
+            started.set();g.run_command([sys.executable,'-c','import time; print("waiting",flush=True); time.sleep(60)'],{},progress)
+        job=g.start_job('extract:child-test:'+str(time.time()),work,serial=True)
+        self.assertTrue(started.wait(1))
+        for _ in range(100):
+            if job in g.JOB_PROCESSES:break
+            time.sleep(.01)
+        self.assertIn(job,g.JOB_PROCESSES);g.cancel_job(job)
+        for _ in range(100):
+            if g.JOBS[job]['status']=='cancelled':break
+            time.sleep(.01)
+        self.assertEqual(g.JOBS[job]['status'],'cancelled');self.assertNotIn(job,g.JOB_PROCESSES)
     def test_extraction_queue_runs_one_ship_at_a_time(self):
         first_started=threading.Event();release=threading.Event();second_started=threading.Event()
         def first(progress):

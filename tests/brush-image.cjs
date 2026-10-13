@@ -6,6 +6,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
     await page.goto(process.env.WORKSHOP_URL||'http://127.0.0.1:8766');await page.locator('#open-model').click();await page.locator('.local-model-options summary').click();await page.locator('.model-card').filter({hasText:'Ōta'}).click();
     await page.waitForFunction(()=>workshop.state.meshes.length&&document.querySelector('#busy').hidden,null,{timeout:90000});
     await page.locator('[data-axis=front]').click();
+    assert(await page.evaluate(()=>workshop.state.meshes.every(m=>m.geometry.boundsTree)),'Real ship meshes have a spatial picking index');
     // Deterministic surface with adjacent triangles and two separated UV islands.
     await page.evaluate(async()=>{
       const T=await import('/vendor/three/build/three.module.js');window.fixtureT=T;
@@ -70,6 +71,20 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
     const orbitBefore=await page.evaluate(()=>workshop.camera.quaternion.toArray());await page.mouse.down({button:'right'});await page.mouse.move(viewport.x+viewport.width/2+80,viewport.y+viewport.height/2+25,{steps:5});await page.mouse.up({button:'right'});await page.waitForTimeout(250);
     assert.notDeepEqual(await page.evaluate(()=>workshop.camera.quaternion.toArray()),orbitBefore,'Right-button orbit works while image tool is active');
     assert.equal(await page.evaluate(()=>workshop.state.docs.get(workshop.state.activeDoc).layers.length),count+1,'Camera controls do not add image layers');
+    await page.locator('[data-axis=front]').click();await page.locator('[data-tool=orbit]').click();
+    const imagePoint=await screen(-.35,.2);await page.mouse.click(imagePoint.x,imagePoint.y);
+    assert.equal(await page.evaluate(()=>workshop.state.activeLayer),await page.evaluate(()=>workshop.state.docs.get(workshop.state.activeDoc).layers.at(-1).id),'Click selects the topmost overlapping image');
+    await page.mouse.click(viewport.x+15,viewport.y+170);assert.equal(await page.evaluate(()=>workshop.state.activeLayer),null,'Empty-space click deselects the image');
+    const bareSurface=await screen(.85,-.8);await page.mouse.click(bareSurface.x,bareSurface.y);assert.equal(await page.evaluate(()=>workshop.state.activeLayer),null,'Clicking bare ship surface leaves image deselected');
+    await page.mouse.click(imagePoint.x,imagePoint.y);await page.keyboard.press('Delete');
+    await page.waitForFunction(count=>workshop.state.docs.get(workshop.state.activeDoc).layers.length===count,count);await page.keyboard.press('Control+z');
+    await page.waitForFunction(count=>workshop.state.docs.get(workshop.state.activeDoc).layers.length===count+1,count);
+    await page.locator('#image-handles [data-handle=rotate]').waitFor({state:'visible'});const snapHandle=await page.locator('#image-handles [data-handle=rotate]').evaluate(e=>e.getBoundingClientRect().toJSON());await page.mouse.move(snapHandle.x+snapHandle.width/2,snapHandle.y+snapHandle.height/2);await page.keyboard.down('Shift');await page.mouse.down();await page.mouse.move(snapHandle.x+60,snapHandle.y+25);await page.mouse.up();await page.keyboard.up('Shift');
+    await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('이미지 레이어를 반영했어요.'),null,{timeout:90000});
+    assert([0,30,45,60,75,90,120,135,150,165,180].includes(Math.abs(await page.evaluate(()=>workshop.state.docs.get(workshop.state.activeDoc).layers.at(-1).rotation))),'Shift rotation snaps to preferred angles');
+    await page.locator('button[data-view="2d"]').click();assert.equal(await page.evaluate(()=>workshop.state.activeLayer),null,'View tab deselects image');await page.locator('button[data-view=split]').click();
+    const splitter=await page.locator('#viewport-splitter').boundingBox(),heightBefore=await page.locator('#scene-wrap').evaluate(e=>e.clientHeight);await drag({x:splitter.x+splitter.width/2,y:splitter.y+4},{x:splitter.x+splitter.width/2,y:splitter.y-80});
+    assert((await page.locator('#scene-wrap').evaluate(e=>e.clientHeight))<heightBefore-50,'Dragging boundary resizes the panes');
     await page.screenshot({path:'tests/output/brush-image.png'});assert.deepEqual(errors,[]);
     console.log('PASS fast 3D brush / UV seams / eraser / move one image layer / resize / rotation / worker baking / editable serialization / Ctrl+C,V,Z,Shift+Z / text clipboard / image paste / wheel zoom / right-button orbit');
   }finally{await browser.close();}

@@ -8,6 +8,8 @@ import {bakeProjection, resetProjectionBaker} from './projection-baker.js';
 import {continuousSurface} from './brush-stroke.js';
 import {ShipLibrary} from './ship-library.js';
 import {setupTextureImport} from './texture-import.js';
+import {setupViewportSplitter} from './viewport-splitter.js';
+import {accelerateMeshes} from './mesh-picking.js';
 import {initI18n, t} from './i18n.js';
 
 const $ = id => document.getElementById(id);
@@ -72,6 +74,7 @@ function drawGizmo() {
 
 function focusView(axis) {
   if (!model) return;
+  const damping=controls.enableDamping;controls.enableDamping=false;controls.update();
   new THREE.Box3().setFromObject(model).getSize(size); new THREE.Box3().setFromObject(model).getCenter(center);
   extent = Math.max(size.x, size.y, size.z); const d = extent * 1.4;
   controls.target.copy(center); camera.up.set(0, 1, 0);
@@ -79,7 +82,7 @@ function focusView(axis) {
   else if (axis === 'front') camera.position.copy(center).add(new THREE.Vector3(0, extent * .08, d));
   else if (axis === 'top') { camera.position.copy(center).add(new THREE.Vector3(0, d, .001)); camera.up.set(0, 0, -1); }
   else camera.position.copy(center).add(new THREE.Vector3(extent * .95, extent * .38, extent * .45));
-  camera.near = Math.max(.001, extent / 10000); camera.far = extent * 100; camera.updateProjectionMatrix(); controls.update();
+  camera.near = Math.max(.001, extent / 10000); camera.far = extent * 100; camera.updateProjectionMatrix(); controls.update();controls.enableDamping=damping;invalidate();
 }
 function disposeModel(old) {
   if (!old) return;
@@ -181,8 +184,9 @@ async function installModel(object, source, savedDocuments = []) {
     doc.layers = saved.layers; doc.target = saved.target;
   }
   // Swap only after geometry and texture discovery have succeeded.
+  await accelerateMeshes(meshes);
   if (model) { scene.remove(model); disposeModel(model); }
-  for (const doc of state.docs.values()) doc.texture?.dispose();
+  for (const doc of state.docs.values()){doc.texture?.dispose();doc.patchTexture?.dispose();}
   model = object; scene.add(model); model.updateMatrixWorld(true);
   Object.assign(state, {source, docs, meshes, activeDoc: null, activeLayer: null, selectedMesh: null, undo: [], redo: [], dirty: false, xml: null, xmlDirty: false});
   for (const [m, key] of originals) { m.userData.docKey = key; m.userData.originalMap = m.map; }
@@ -297,11 +301,20 @@ function drawNow(doc = current()) {
     doc.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); doc.texture.generateMipmaps = false; doc.texture.minFilter = THREE.LinearFilter;
     for (const m of doc.materials) { m.map = doc.texture; m.needsUpdate = true; }
   }
-  const limit = Math.min(Number($('preview-quality').value),stroke?1024:4096), ratio = Math.min(1, limit / Math.max(c.width,c.height));
+  const limit = Number($('preview-quality').value), ratio = Math.min(1, limit / Math.max(c.width,c.height));
   const w=Math.round(c.width*ratio), h=Math.round(c.height*ratio);
-  if (doc.preview.width!==w||doc.preview.height!==h) {doc.preview.width=w;doc.preview.height=h;}
-  doc.preview.getContext('2d').drawImage(c,0,0,w,h);
-  doc.texture.needsUpdate = true; invalidate();
+  const resized=doc.preview.width!==w||doc.preview.height!==h;
+  if (resized) {doc.texture.dispose();doc.preview.width=w;doc.preview.height=h;}
+  const previewContext=doc.preview.getContext('2d');previewContext.save();if(region&&!resized){previewContext.beginPath();previewContext.rect(Math.floor(region.x*ratio)-1,Math.floor(region.y*ratio)-1,Math.ceil(region.w*ratio)+2,Math.ceil(region.h*ratio)+2);previewContext.clip();}previewContext.clearRect(0,0,w,h);previewContext.drawImage(c,0,0,w,h);previewContext.restore();
+  if(region&&!resized){
+    const x=Math.max(0,Math.floor(region.x*ratio)-1),y=Math.max(0,Math.floor(region.y*ratio)-1),right=Math.min(w,Math.ceil((region.x+region.w)*ratio)+1),bottom=Math.min(h,Math.ceil((region.y+region.h)*ratio)+1);
+    if(right>x&&bottom>y){
+      if(!doc.patch){doc.patch=canvas(1,1);doc.patchTexture=new THREE.CanvasTexture(doc.patch);doc.patchTexture.colorSpace=THREE.SRGBColorSpace;}
+      doc.patch.width=right-x;doc.patch.height=bottom-y;doc.patch.getContext('2d').drawImage(doc.preview,x,y,right-x,bottom-y,0,0,right-x,bottom-y);
+      renderer.copyTextureToTexture(doc.patchTexture,doc.texture,null,new THREE.Vector2(x,doc.flipY?h-bottom:y));
+    }
+  }else doc.texture.needsUpdate = true;
+  invalidate();
   if (state.channel !== 'albedo' && doc.key === state.activeDoc) return;
   if (doc.key === state.activeDoc) {
     const view = $('texture-canvas'); if (view.width !== c.width || view.height !== c.height) { view.width = c.width; view.height = c.height; }
@@ -435,7 +448,7 @@ function endGesture() { if (stroke || imageDrag) { stroke = null; imageDrag = nu
 $('texture-canvas').addEventListener('pointerup', endGesture); $('texture-canvas').addEventListener('pointercancel', endGesture);
 function pick(event) {
   const rect = renderer.domElement.getBoundingClientRect(); mouse.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-  raycaster.setFromCamera(mouse, camera); return raycaster.intersectObjects(state.meshes.filter(m => m.visible), false)[0];
+  raycaster.firstHitOnly=true;raycaster.setFromCamera(mouse, camera); return raycaster.intersectObjects(state.meshes.filter(m => m.visible), false)[0];
 }
 let projectionDrag=null, projectionPreview=null;
 imageHandles=document.createElementNS('http://www.w3.org/2000/svg','svg');imageHandles.id='image-handles';imageHandles.setAttribute('aria-label',t('imageTransformHandles'));$('scene-wrap').append(imageHandles);
@@ -488,7 +501,7 @@ imageHandles.addEventListener('pointermove',event=>{
   if(!projectionDrag?.mode||event.pointerId!==projectionDrag.pointerId)return;
   const g=projectionDrag,host=$('scene-wrap').getBoundingClientRect(),dx=event.clientX-host.left-g.center.x,dy=event.clientY-host.top-g.center.y;
   if(g.mode==='scale')g.candidate.scale=Math.max(.01,Math.min(1.5,g.startScale*Math.hypot(dx,dy)/Math.max(1,g.startDistance)));
-  else{const delta=Math.atan2(Math.sin(Math.atan2(dy,dx)-g.startAngle),Math.cos(Math.atan2(dy,dx)-g.startAngle));g.candidate.rotation=((g.startRotation-delta*180/Math.PI+540)%360)-180;}
+  else{const delta=Math.atan2(Math.sin(Math.atan2(dy,dx)-g.startAngle),Math.cos(Math.atan2(dy,dx)-g.startAngle));let angle=((g.startRotation-delta*180/Math.PI+540)%360)-180;if(event.shiftKey){const stops=[0,30,45,60,75,90,120,135,150,165,180];angle=Math.sign(angle)*stops.reduce((best,n)=>Math.abs(n-Math.abs(angle))<Math.abs(best-Math.abs(angle))?n:best,0);}g.candidate.rotation=angle;}
   previewProjection(g.candidate,g.doc);
 });
 imageHandles.addEventListener('pointerup',event=>{if(projectionDrag?.mode&&event.pointerId===projectionDrag.pointerId)finishImageMove();});
@@ -511,32 +524,41 @@ function beginImageMove(hit,event){
   if(row&&key!==state.activeDoc)throw Error(t('imageSameTexture'));
   if(key!==state.activeDoc)selectMesh(hit.object,hit.face.materialIndex);
   const candidate={...(row||newImage(current(),image,state.imageName)),x:.5,y:.5,scale:row?.projection?row.scale:Number($('stamp-size').value)/100,rotation:row?.projection?row.rotation:Number($('stamp-rotation').value),projection:{origin:hit.point.toArray(),...surfaceUp(hit,row?.projection),meshName:hit.object.name,scope:row?.projection?.scope||$('stamp-scope').value,maxAngle:row?.projection?.maxAngle??Number($('stamp-angle').value),depth:row?.projection?.depth??Number($('stamp-depth').value)/100,mirror:row?.projection?.mirror??$('stamp-mirror').checked}};
-  projectionDrag={row,candidate,doc:current(),pointerId:event.pointerId,visible:row?.visible};
-  if(row){row.visible=false;draw();}previewProjection(candidate,current());renderer.domElement.setPointerCapture(event.pointerId);
+  projectionDrag={row,candidate,doc:current(),pointerId:event.pointerId,visible:row?.visible,startClient:{x:event.clientX,y:event.clientY},moved:!row};
+  if(!row)previewProjection(candidate,current());renderer.domElement.setPointerCapture(event.pointerId);
 }
 function moveImageLayer(event){
   if(!projectionDrag||event.pointerId!==projectionDrag.pointerId)return;
+  if(!projectionDrag.moved){if(Math.hypot(event.clientX-projectionDrag.startClient.x,event.clientY-projectionDrag.startClient.y)<3)return;projectionDrag.moved=true;projectionDrag.row.visible=false;draw(projectionDrag.doc);}
   const hit=pick(event);if(!hit?.uv)return;
   const material=[].concat(hit.object.material)[hit.face.materialIndex];if(material.userData.docKey!==projectionDrag.doc.key)return;
   const p=projectionDrag.candidate.projection;projectionDrag.candidate.projection={...p,origin:hit.point.toArray(),...surfaceUp(hit,p),meshName:hit.object.name};previewProjection(projectionDrag.candidate,projectionDrag.doc);
 }
 function finishImageMove(cancel=false){
-  if(!projectionDrag)return;const {row,candidate,doc,visible}=projectionDrag;projectionDrag=null;clearProjectionPreview();
+  if(!projectionDrag)return;const {row,candidate,doc,visible,moved,mode}=projectionDrag;projectionDrag=null;clearProjectionPreview();
   if(row)row.visible=visible;
+  if(row&&!moved&&!mode){invalidate();return;}
   if(cancel){draw(doc);return;}
   checkpoint();candidate.visible=true;
   let target=row;if(row)Object.assign(row,candidate);else{target=candidate;target.raster=canvas(doc.base.width,doc.base.height);doc.layers.push(target);}
   state.activeLayer=target.id;state.image=null;changed();updateProjectedLayer(target,doc);
 }
 let pointerDown = null;
+function deselectImage(){if(layer()?.kind!=='image')return;state.activeLayer=null;renderLayers();syncProperties();invalidate();}
+function imageAtHit(hit){
+  if(!hit?.uv)return null;const material=[].concat(hit.object.material)[hit.face.materialIndex],doc=state.docs.get(material?.userData.docKey);if(!doc?.base)return null;
+  const x=Math.min(doc.base.width-1,Math.floor(((hit.uv.x%1+1)%1)*doc.base.width)),y=Math.min(doc.base.height-1,Math.floor((doc.flipY?1-((hit.uv.y%1+1)%1):((hit.uv.y%1+1)%1))*doc.base.height));
+  for(const row of doc.layers.slice().reverse()){if(row.kind!=='image'||!row.visible||!row.opacity||!row.projection||!row.raster)continue;if(row.raster.getContext('2d').getImageData(x,y,1,1).data[3]>16)return{row,doc};}return null;
+}
+function selectImageHit(hit){const selected=imageAtHit(hit);if(!selected)return false;if(selected.doc.key!==state.activeDoc)selectDoc(selected.doc.key);state.activeLayer=selected.row.id;renderLayers();syncProperties();invalidate();return true;}
 renderer.domElement.addEventListener('pointerdown', action(event => {
   if (event.button || !model || loading) return;
   pointerDown = {x: event.clientX, y: event.clientY};
   if (state.tool === 'orbit') return;
-  const hit = pick(event); if (!hit) return;
+  const hit = pick(event); if (!hit){deselectImage();return;}
   if (state.tool !== 'image') selectMesh(hit.object, hit.face.materialIndex);
   if ($('compare').checked) throw Error('원본 비교를 끄고 편집하세요.');
-  if (state.tool === 'image') { beginImageMove(hit,event); return; }
+  if (state.tool === 'image') {if(!state.image&&!selectImageHit(hit)){deselectImage();return;} beginImageMove(hit,event); return; }
   const row = beginPaint(); if (!row || !hit.uv) return;
   stroke = {row, where: '3d', key: state.activeDoc, previous: null, screen: {x:event.clientX,y:event.clientY}, pointerId:event.pointerId};
   const x = ((hit.uv.x % 1 + 1) % 1) * row.raster.width, y = (current().flipY ? 1 - ((hit.uv.y % 1 + 1) % 1) : ((hit.uv.y % 1 + 1) % 1)) * row.raster.height;
@@ -559,7 +581,7 @@ function moveSurfaceBrush(event) {
     if (continuousSurface(stroke.previous?.hit,hit)) paintSurfaceSample(hit);
     else {
       // Trace the visible surface between sparse input events, rather than connecting UV islands.
-      const steps=Math.max(1,Math.ceil(Math.hypot(end.x-start.x,end.y-start.y)/3));
+      const steps=Math.max(1,Math.min(64,Math.ceil(Math.hypot(end.x-start.x,end.y-start.y)/3)));
       for (let i=1;i<=steps;i++) paintSurfaceSample(i===steps?hit:pick({clientX:start.x+(end.x-start.x)*i/steps,clientY:start.y+(end.y-start.y)*i/steps}));
     }
     stroke.screen=end;
@@ -570,7 +592,7 @@ renderer.domElement.addEventListener('pointermove', moveImageLayer);
 renderer.domElement.addEventListener('pointerup', action(event => {
   if(projectionDrag){moveImageLayer(event);finishImageMove();pointerDown=null;return;}
   moveSurfaceBrush(event);
-  if (state.tool === 'orbit' && pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 5) { const hit = pick(event); if (hit) selectMesh(hit.object, hit.face.materialIndex); }
+  if (state.tool === 'orbit' && pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 5) { const hit = pick(event); if(!selectImageHit(hit)){if(hit)selectMesh(hit.object, hit.face.materialIndex);deselectImage();} }
   pointerDown = null; endGesture();
 }));
 renderer.domElement.addEventListener('pointercancel', ()=>{finishImageMove(true);endGesture();});
@@ -659,6 +681,7 @@ async function parseEmbeddedGLB(buffer) {
 
 // File and editor actions.
 const shipLibrary = new ShipLibrary(api, loadSource, report);
+setupViewportSplitter();
 setupTextureImport({api,state,selectDoc,checkpoint,changed,busy,report});
 const replaceBlend=new Option(t('textureReplaceBlend'),'copy');$('blend').append(replaceBlend);
 let clickedAxis = null;
@@ -697,7 +720,7 @@ $('project-file').onchange = action(async event => { const file = event.target.f
 $('save-project').onclick = action(async () => { if (!state.source) throw Error('모델을 먼저 열어주세요.'); jsonDownload(await projectDataAsync(), state.source.name + '.wowskin'); state.dirty = false; $('save-state').textContent = '프로젝트 다운로드 요청됨'; message('프로젝트 저장을 요청했어요. 다운로드 완료를 확인하세요.'); });
 $('export').onclick = action(showExport); $('download-export').onclick = action(exportWork);
 document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => button.closest('dialog').close());
-document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => { document.querySelector('.workspace').dataset.view = button.dataset.view; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b === button)); resize(); });
+document.querySelectorAll('button[data-view]').forEach(button => button.onclick = () => { document.querySelector('.workspace').dataset.view = button.dataset.view; document.querySelectorAll('button[data-view]').forEach(b => b.classList.toggle('active', b === button)); resize(); });
 document.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => { if (button.dataset.tool === 'image') $('image-file').click(); else setTool(button.dataset.tool); });
 async function importImageFile(file){
   if (!current()) throw Error('모델을 먼저 열어주세요.');if(file.size>16*1024*1024)throw Error('이미지는 16 MiB 이하로 선택하세요.');
@@ -747,12 +770,15 @@ document.addEventListener('paste',action(async event=>{
 }));
 document.addEventListener('keydown', event => {
   if (textInput(event.target)) return;
+  if(event.key==='Delete'&&!loading&&!stroke&&!projectionDrag&&!imageDrag&&layer()){event.preventDefault();$('delete-layer').click();}
   const modifier=event.ctrlKey||event.metaKey;
   if (modifier && event.key.toLowerCase() === 's') { event.preventDefault(); $('save-project').click(); }
   if (modifier && event.key.toLowerCase() === 'z') { event.preventDefault(); (event.shiftKey ? $('redo') : $('undo')).click(); }
   if (modifier && event.key.toLowerCase() === 'y') { event.preventDefault(); $('redo').click(); }
-  if (event.key === 'Escape') {finishImageMove(true);setTool('orbit');}
+  if (event.key === 'Escape') {finishImageMove(true);deselectImage();setTool('orbit');}
 });
+document.addEventListener('pointerdown',event=>{if(event.target.closest('button[data-view],[data-tool],#channel-tabs,#open-model,#camo-open,.material-card'))deselectImage();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)deselectImage();});
 window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
 syncUndo(); syncProperties(); resize();
 // Read-only access for integration checks and diagnostics.

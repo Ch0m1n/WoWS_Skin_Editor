@@ -33,7 +33,7 @@ async function wait(job){for(let i=0;i<600;i++){const j=await api('jobs/'+job);i
       const job=(await api('ship-model',{game,code:'PJSC769',language:'en'})).job;const result=await wait(job);const source=await api('job-model',{job});assert(source.folder===result.folder);
       console.log('PASS standalone package-to-editable-model extraction',source.folder);
       if(process.env.CHECK_TOOLBOX_ABSENT==='1')assert.equal((await api('library')).models.length,0,'No installed Toolbox export library is available');
-      await page.locator('.ship-card').click();await page.waitForFunction(()=>workshop.state.meshes.length>10&&document.querySelector('#busy').hidden,null,{timeout:90000});
+      await page.locator('.ship-card').click();await page.locator('#open-selected-ship').click();await page.waitForFunction(()=>workshop.state.meshes.length>10&&document.querySelector('#busy').hidden,null,{timeout:90000});
       assert.equal(await page.locator('#texture-canvas').getAttribute('width'),'4096');
       await page.screenshot({path:path.join(__dirname,'output','portable-package-model.png')});
       console.log('PASS package-extracted model opens in the editor with full-resolution textures');
@@ -42,7 +42,7 @@ async function wait(job){for(let i=0;i<600;i++){const j=await api('jobs/'+job);i
       await page.route('**/api/ship-model',route=>route.fulfill({json:{job:'test-progress'}}));
       let measured=false;
       await page.route('**/api/jobs/test-progress',route=>route.fulfill({json:{status:'running',message:'Preparing full-resolution textures and editable parts…',started:Date.now()/1000-10,percent:measured?54:null,estimated_total_seconds:50}}));
-      await page.locator('.ship-card').click();await page.waitForFunction(()=>document.querySelector('#ship-progress-details').textContent.includes('Elapsed 10s'));
+      await page.locator('.ship-card').click();await page.locator('#open-selected-ship').click();await page.waitForFunction(()=>document.querySelector('#ship-progress-details').textContent.includes('Elapsed 10s'));
       assert(await page.locator('#ship-preparation').isVisible());assert.equal(await page.locator('#ship-progress').getAttribute('value'),null);
       assert((await page.locator('#ship-progress-details').innerText()).includes('About 40s'));
       measured=true;await page.waitForFunction(()=>document.querySelector('#ship-progress').value===54);

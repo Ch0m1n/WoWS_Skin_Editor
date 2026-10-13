@@ -17,6 +17,7 @@ ENGINE = ROOT / 'engine' / 'Backend'
 CACHE = Path(os.environ.get('WOWS_WORKSHOP_CACHE', ROOT / '.cache'))
 GAMES = {}
 JOBS = {}
+JOB_PROCESSES = {}
 LOCK = threading.RLock()
 INDEX_LOCK = threading.RLock()
 EXTRACTION_QUEUE = queue.Queue()
@@ -79,23 +80,68 @@ def cache_dir(key):
     root.mkdir(parents=True, exist_ok=True)
     return root
 
+class JobCancelled(Exception):
+    pass
+
+
+def stop_job_process(process):
+    if process.poll() is not None: return
+    if os.name == 'nt':
+        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, creationflags=0x08000000)
+    else:
+        import signal
+        try: os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError: pass
+
+
+def cancel_job(key):
+    with LOCK:
+        job = JOBS.get(key)
+        if not job or not job['signature'].startswith('extract:'): raise ValueError('추출 작업을 찾지 못했어요.')
+        if job['status'] not in ('queued', 'running', 'cancelling'): return job['status']
+        job['cancel_requested'] = True
+        job.update(status='cancelled' if job['status'] == 'queued' else 'cancelling', message='함선 준비를 취소했어요.')
+        process = JOB_PROCESSES.get(key)
+    if process: stop_job_process(process)
+    return job['status']
+
+
 def start_job(signature, work, serial=False, metadata=None):
     global EXTRACTION_WORKER
     with LOCK:
         for key, job in JOBS.items():
-            if job['signature'] == signature and job['status'] in ('queued', 'running', 'done'): return key
+            if job['signature'] == signature and job['status'] in ('queued', 'running', 'cancelling', 'done'): return key
         key = uuid.uuid4().hex
         JOBS[key] = {'signature': signature, 'status': 'queued' if serial else 'running', 'message': '대기열에서 기다리는 중이에요.' if serial else '준비 중', 'started': time.time(), 'percent': None, **(metadata or {})}
     def progress(message, **details):
+        check_cancel()
         with LOCK:
             JOBS[key].update(message=message, **details)
+    def check_cancel():
+        if JOBS[key].get('cancel_requested'): raise JobCancelled()
+    def set_process(process):
+        with LOCK:
+            if process is None: JOB_PROCESSES.pop(key, None)
+            else: JOB_PROCESSES[key] = process
+        if process and JOBS[key].get('cancel_requested'): stop_job_process(process)
+    progress.check_cancel = check_cancel
+    progress.set_process = set_process
     def run():
-        JOBS[key].update(status='running', started=time.time(), message='준비 중')
         try:
+            with LOCK:
+                check_cancel()
+                JOBS[key].update(status='running', started=time.time(), message='준비 중')
             result = work(progress)
-            JOBS[key].update(status='done', percent=100, result=result, seconds=round(time.time() - JOBS[key]['started'], 2))
+            with LOCK:
+                check_cancel()
+                JOBS[key].update(status='done', percent=100, result=result, seconds=round(time.time() - JOBS[key]['started'], 2))
         except Exception as error:
-            JOBS[key].update(status='error', message=str(error))
+            with LOCK:
+                JOBS[key].update(status='cancelled' if JOBS[key].get('cancel_requested') else 'error',
+                                 message='함선 준비를 취소했어요.' if JOBS[key].get('cancel_requested') else str(error))
+        finally:
+            with LOCK: JOB_PROCESSES.pop(key, None)
     if serial:
         with LOCK:
             if EXTRACTION_WORKER is None:
@@ -149,9 +195,11 @@ def thumbnail(key, code):
     return target
 
 def run_command(command, env, progress, measured=False):
+    progress.check_cancel()
     tail = []
     with subprocess.Popen(command, cwd=ENGINE, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True, encoding='utf-8', errors='replace', creationflags=0x08000000 if os.name == 'nt' else 0) as process:
+                          text=True, encoding='utf-8', errors='replace', start_new_session=os.name != 'nt', creationflags=0x08000000 if os.name == 'nt' else 0) as process:
+        progress.set_process(process)
         for line in process.stdout:
             line = line.strip(); tail.append(line); tail = tail[-8:]
             if line.startswith('[PROGRESS] ') and measured:
@@ -159,7 +207,10 @@ def run_command(command, env, progress, measured=False):
                     value = json.loads(line[len('[PROGRESS] '):])
                     progress(value['message'], percent=value['percent'], stage=value['stage'])
                 except (ValueError, KeyError, TypeError): pass
-        if process.wait(): raise RuntimeError('\n'.join(tail))
+        result = process.wait()
+        progress.set_process(None)
+        progress.check_cancel()
+        if result: raise RuntimeError('\n'.join(tail))
 
 def extract_job(key, code, language='ko'):
     folder = game_dir(key); root = cache_dir(key)
@@ -185,14 +236,18 @@ def extract_job(key, code, language='ko'):
         env = os.environ.copy(); env['WOWS_GAME_PARAMS_OVERRIDE'] = str(info['game_params']); env['PYTHONUTF8'] = '1'; env['WOWS_TOOLBOX_LANGUAGE'] = language
         glb = target / f'{code}.glb'; exporter = ENGINE / 'wowsunpack.exe'
         if not glb.is_file() or glb.stat().st_size < 24:
+            pending = target / f'{code}.pending.glb'
             run_command([str(exporter), '--game-dir', str(folder), 'export-ship', code, '--lod', '0',
-                         *(['--hull', row['HullUpgrade']] if row.get('HullUpgrade') else []), '--output', str(glb)], env, progress)
+                         *(['--hull', row['HullUpgrade']] if row.get('HullUpgrade') else []), '--output', str(pending)], env, progress)
+            progress.check_cancel()
+            pending.replace(glb)
         progress('원본 크기의 텍스처와 편집용 부품을 준비하고 있어요.', stage='texture', percent=0, stage_started=time.time())
         run_command([sys.executable, str(ENGINE / 'native_glb_export.py'), '--input', str(glb), '--output', str(target / f'{code}.obj'),
                      '--report', str(target / 'export.json'), '--formats', 'obj', '--texture-max-size', '0',
                      '--pbr-exporter', str(exporter), '--pbr-game-dir', str(folder), '--pbr-cache', str(root / 'PBRMaps')], env, progress, measured=True)
-        marker.write_text(json.dumps({'build': GAMES[key]['build'], 'code': code}), encoding='utf-8')
         with LOCK:
+            progress.check_cancel()
+            marker.write_text(json.dumps({'build': GAMES[key]['build'], 'code': code}), encoding='utf-8')
             try: history = json.loads(timings.read_text(encoding='utf-8'))
             except (OSError, ValueError): history = {}
             history[code] = round(time.time() - started, 2)

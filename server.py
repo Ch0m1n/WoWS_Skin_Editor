@@ -250,6 +250,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'job': game_library.catalog_job(payload['game'], payload.get('refresh', False), payload.get('language','ko'))})
             if path == '/api/ship-model':
                 return self.json({'job': game_library.extract_job(payload['game'], payload['code'],payload.get('language','ko'))})
+            if path == '/api/cancel-preparation':
+                return self.json({'status': game_library.cancel_job(payload['job'])})
             if path == '/api/job-model':
                 job = game_library.JOBS.get(payload['job'])
                 if not job or job['status'] != 'done' or not job['signature'].startswith('extract:'): raise ValueError('모델 준비가 끝나지 않았어요.')
