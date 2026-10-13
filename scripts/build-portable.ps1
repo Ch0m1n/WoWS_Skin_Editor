@@ -20,7 +20,7 @@ Get-ChildItem -LiteralPath (Join-Path $RuntimeSource 'Lib\site-packages') -Direc
         Copy-Item -LiteralPath $_.FullName -Destination $targetFile
     }
 }
-@('server.py','game_library.py','launch.py','README.md','LICENSE','CHANGELOG.md','THIRD_PARTY_NOTICES.md') | ForEach-Object {Copy-Item -LiteralPath (Join-Path $projectRoot $_) -Destination $releaseRoot -Force}
+@('server.py','game_library.py','launch.py','project_store.py','app_version.py','README.md','LICENSE','CHANGELOG.md','RELEASE-v0.2.md','THIRD_PARTY_NOTICES.md') | ForEach-Object {Copy-Item -LiteralPath (Join-Path $projectRoot $_) -Destination $releaseRoot -Force}
 # An app-specific .pth makes the project visible to the isolated embedded interpreter.
 @('python310.zip','.','Lib\site-packages','..\..','..\..\engine\Backend','import site') | Set-Content -LiteralPath (Join-Path $runtime 'python310._pth') -Encoding ascii
 @('@echo off','cd /d "%~dp0"','"Runtime\Python\python.exe" launch.py','if errorlevel 1 pause') | Set-Content -LiteralPath (Join-Path $releaseRoot 'Start-Workshop.cmd') -Encoding ascii

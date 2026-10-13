@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import gzip
 import io
 import json
 import mimetypes
@@ -12,8 +13,14 @@ import struct
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 import zipfile
+import threading
+import subprocess
+import sys
+import time
 from PIL import Image
 import game_library
+import project_store
+from app_version import VERSION, BUILD_ID
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / 'web'
@@ -74,17 +81,51 @@ def decode_png(value: str) -> Image.Image:
     if not isinstance(value, str) or not value.startswith('data:image/png;base64,'):
         raise ValueError('PNG 이미지 데이터가 필요해요.')
     raw = base64.b64decode(value.partition(',')[2], validate=True)
-    if len(raw) > 32 * 1024 * 1024:
+    if len(raw) > 96 * 1024 * 1024:
         raise ValueError('텍스처 파일이 너무 커요.')
     with Image.open(io.BytesIO(raw)) as image:
         if image.width * image.height > MAX_PIXELS or max(image.size) > 4096:
             raise ValueError('첫 버전은 최대 4096 × 4096 텍스처를 지원해요.')
         return image.convert('RGBA')
 
+def resolve_source(payload):
+    source=payload.get('source',{})
+    source=dict(source)
+    stem=Path(source.get('model','')).stem
+    import re
+    if not source.get('code') and re.fullmatch(r'[A-Z]{4,5}[0-9]{3,4}[A-Z0-9_]*',stem):source['code']=stem
+    if payload.get('folder'):return {'source':register_source(Path(payload['folder']))}
+    if source.get('folder') and Path(source['folder']).is_dir():
+        original=register_source(Path(source['folder']))
+        if source.get('name'):original['name']=source['name']
+        original.update({k:source[k] for k in ('code','gameFolder','gameBuild','language','game') if k in source})
+        if not source.get('code'):return {'source':original}
+        info=game_library.install_info(source.get('gameFolder',''))
+        if info and info['build']==source.get('gameBuild'):return {'source':original}
+    code=source.get('code')
+    if not code:raise ValueError('모델 폴더를 다시 연결해주세요.')
+    info=game_library.install_info(source.get('gameFolder',''))
+    if not info:
+        games=game_library.discover_games()
+        if len(games)!=1:raise ValueError('게임 또는 모델 폴더를 다시 연결해주세요.')
+        info=games[0]
+    language=source.get('language','ko')
+    def work(progress):
+        key=game_library.catalog_job(info['id'],language=language)
+        while game_library.JOBS[key]['status']=='running':time.sleep(.1)
+        if game_library.JOBS[key]['status']!='done':raise ValueError(game_library.JOBS[key]['message'])
+        key=game_library.extract_job(info['id'],code,language)
+        while game_library.JOBS[key]['status'] in ('queued','running','paused','cancelling'):time.sleep(.2)
+        job=game_library.JOBS[key]
+        if job['status']!='done':raise ValueError(job['message'])
+        result=register_source(Path(job['result']['folder']));result.update(code=code,game=info['id'],gameFolder=info['folder'],gameBuild=info['build'],language=language)
+        return result
+    return {'job':game_library.start_job('resolve:'+code+':'+str(info['build']),work)}
+
 
 def import_texture(payload):
     raw = base64.b64decode(payload['data'], validate=True)
-    if len(raw) > 32 * 1024 * 1024: raise ValueError('텍스처 파일은 32 MiB 이하로 선택하세요.')
+    if len(raw) > 96 * 1024 * 1024: raise ValueError('텍스처 파일은 96 MiB 이하로 선택하세요.')
     with Image.open(io.BytesIO(raw)) as source:
         if source.format not in ('PNG', 'DDS'): raise ValueError('PNG 또는 DDS 텍스처를 선택하세요.')
         if max(source.size) > 4096 or source.width * source.height > MAX_PIXELS: raise ValueError('최대 4096 × 4096 텍스처를 지원해요.')
@@ -194,7 +235,13 @@ class Handler(BaseHTTPRequestHandler):
             self.check_host()
             path = unquote(urlparse(self.path).path)
             if path == '/api/health':
-                return self.json({'app': 'wows-skin-workshop', 'version': '0.1'})
+                return self.json({'app': 'wows-skin-workshop', 'version': VERSION, 'build':BUILD_ID, 'root':str(ROOT), 'pid':os.getpid()})
+            if path == '/api/backups':
+                return self.json({'backups':project_store.list_backups()})
+            if path == '/api/cache':
+                return self.json({'models':game_library.list_model_cache()})
+            if path == '/api/queue-state':
+                return self.json({'paused':game_library.PAUSED, 'order':game_library.QUEUE_ORDER})
             if path == '/api/library':
                 return self.json({'models': discover_library()})
             if path == '/api/games':
@@ -236,12 +283,37 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if length <= 0 or length > MAX_BODY:
                 raise ValueError('요청 크기가 너무 커요.')
-            payload = json.loads(self.rfile.read(length))
+            raw=self.rfile.read(length)
+            if self.headers.get('Content-Encoding')=='gzip':
+                with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:raw=stream.read(512*1024*1024+1)
+                if len(raw)>512*1024*1024:raise ValueError('프로젝트 데이터가 512 MiB를 넘어요. 텍스처를 평면화하세요.')
+            elif self.headers.get('Content-Encoding'):raise ValueError('지원하지 않는 압축 형식이에요.')
+            payload = json.loads(raw)
             path = urlparse(self.path).path
             if path == '/api/open-folder':
                 return self.json(register_source(Path(payload['folder'])))
             if path == '/api/import-texture':
                 return self.json(import_texture(payload))
+            if path == '/api/save-backup':
+                return self.json(project_store.save_backup(payload))
+            if path == '/api/read-backup':
+                return self.json(project_store.read_backup(payload['id']))
+            if path == '/api/cache-control':
+                return self.json(game_library.cache_control(payload))
+            if path == '/api/queue-control':
+                return self.json(game_library.queue_control(payload))
+            if path == '/api/resolve-source':
+                return self.json(resolve_source(payload))
+            if path == '/api/server-control':
+                action=payload.get('action')
+                if action not in ('restart','stop'): raise ValueError('지원하지 않는 서버 동작이에요.')
+                if any(j['status'] in ('running','paused','cancelling') for j in game_library.JOBS.values()): raise ValueError('진행 중인 준비 작업을 먼저 취소하세요.')
+                game_library.persist_queue()
+                self.json({'action':action})
+                def finish():
+                    time.sleep(.2);self.server.shutdown();self.server.server_close()
+                    if action=='restart': subprocess.Popen([sys.executable,str(ROOT/'server.py'),'--port',str(self.server.server_port)],cwd=ROOT,creationflags=0x08000000 if os.name=='nt' else 0)
+                threading.Thread(target=finish,daemon=False).start();return
             if path == '/api/game-folder':
                 info = game_library.install_info(payload['folder'])
                 if not info: raise ValueError('idx와 res_packages가 있는 워쉽 설치 폴더를 선택하세요.')
@@ -257,11 +329,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not job or job['status'] != 'done' or not job['signature'].startswith('extract:'): raise ValueError('모델 준비가 끝나지 않았어요.')
                 source = register_source(Path(job['result']['folder']))
                 source['name'] = job['result']['name']
+                source.update({k:job.get(k) for k in ('code','game','language')})
+                source['gameFolder']=game_library.GAMES[job['game']]['folder'];source['gameBuild']=game_library.GAMES[job['game']]['build']
                 return self.json(source)
             if path == '/api/export':
                 return self.send(export_zip(payload), 'application/zip', filename='wows-skin.zip')
             return self.json({'error': '지원하지 않는 요청이에요.'}, 404)
-        except (ValueError, KeyError, TypeError, OSError, Image.DecompressionBombError) as error:
+        except (ValueError, KeyError, TypeError, OSError, EOFError, Image.DecompressionBombError) as error:
             self.json({'error': str(error)}, 400)
 
 
@@ -271,10 +345,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     discover_library()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    game_library.restore_queue()
     print(f'WoWS Skin Workshop: http://127.0.0.1:{args.port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        game_library.persist_queue()
+        for process in list(game_library.JOB_PROCESSES.values()):game_library.stop_job_process(process)
         server.server_close()

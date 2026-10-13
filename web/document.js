@@ -1,6 +1,10 @@
+import {t} from './i18n.js';
 export const MAX_DIMENSION = 4096;
+const buffers=new Set();
+export function canvasBytes(){let bytes=0;for(const reference of buffers){const c=reference.deref();if(!c)buffers.delete(reference);else bytes+=c.width*c.height*4;}return bytes;}
 export function canvas(width, height) {
-  const c = document.createElement('canvas'); c.width = width; c.height = height; return c;
+  if(typeof WeakRef!=='undefined'&&width*height*4+canvasBytes()>1024*1024*1024)throw Error(t('memoryBudgetExceeded'));
+  const c = document.createElement('canvas'); c.width = width; c.height = height;if(typeof WeakRef!=='undefined')buffers.add(new WeakRef(c)); return c;
 }
 export function uid() { return crypto.randomUUID(); }
 export function checkedImage(image) {
@@ -39,7 +43,7 @@ export function composite(doc, original = false, region = null) {
     if (layer.kind === 'image' && !layer.projection) {
       const width = w * layer.scale, height = width * layer.image.height / layer.image.width;
       ctx.translate(layer.x * w, layer.y * h); ctx.rotate(layer.rotation * Math.PI / 180);
-      ctx.scale(layer.flip ? -1 : 1, 1); ctx.drawImage(layer.image, -width / 2, -height / 2, width, height);
+      ctx.scale(layer.flip ? -1 : 1, layer.flipYImage?-1:1); ctx.drawImage(layer.image, -width / 2, -height / 2, width, height);
     } else ctx.drawImage(layer.raster, 0, 0);
     ctx.restore();
   }

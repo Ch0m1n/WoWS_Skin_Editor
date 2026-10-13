@@ -10,7 +10,11 @@ import {ShipLibrary} from './ship-library.js';
 import {setupTextureImport} from './texture-import.js';
 import {setupViewportSplitter} from './viewport-splitter.js';
 import {accelerateMeshes} from './mesh-picking.js';
-import {initI18n, t} from './i18n.js';
+import {snapshot, capturePaint, restoreSnapshot, historyBytes} from './history.js';
+import {paintStroke} from './brush.js';
+import {setupWorkshopTools} from './workshop-tools.js';
+import {setupPartMask} from './part-mask.js';
+import {initI18n, t, language} from './i18n.js';
 
 const $ = id => document.getElementById(id);
 const state = {source: null, docs: new Map(), meshes: [], activeDoc: null, activeLayer: null, selectedMesh: null,
@@ -19,10 +23,13 @@ let model = null, zoom = 'fit', stroke = null, imageDrag = null, autosaveTimer =
 let imageHandles=null;
 let renderNeeded = true, pendingDraw = false;
 const invalidate = () => { renderNeeded = true; };
-const renderer = new THREE.WebGLRenderer({antialias: true, alpha: false});
+let renderer;
+try{renderer = new THREE.WebGLRenderer({antialias: true, alpha: false});}
+catch{const element=canvas(1,1);renderer={isFallback:true,domElement:element,capabilities:{getMaxAnisotropy:()=>1},setPixelRatio(){},setClearColor(){},setSize(w,h){element.width=w;element.height=h;},render(){},getContext:()=>null,copyTextureToTexture(){}};document.querySelector('.workspace').dataset.view='2d';}
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setClearColor('#1c252d'); renderer.outputColorSpace = THREE.SRGBColorSpace;
 $('scene').append(renderer.domElement);
+if(renderer.isFallback)for(const button of document.querySelectorAll('button[data-view]')){button.disabled=button.dataset.view!=='2d';button.classList.toggle('active',button.dataset.view==='2d');}
 const scene = new THREE.Scene(); scene.fog = new THREE.Fog('#1c252d', 50, 150);
 const camera = new THREE.PerspectiveCamera(38, 1, .01, 10000);
 const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
@@ -38,7 +45,8 @@ let extent = 20;
 function message(text, error = false) { $('status').textContent = t(text); $('status').style.color = error ? '#f5a5a0' : ''; }
 function busy(value, label = '모델을 불러오는 중이에요.') { loading = value; $('busy').hidden = !value; $('busy-label').textContent = label; }
 async function api(path, payload) {
-  const response = await fetch('/api/' + path, payload ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)} : {});
+  let options={};if(payload){let body=JSON.stringify(payload);const headers={'Content-Type':'application/json'};if(body.length>8*1024*1024&&typeof CompressionStream!=='undefined'){body=await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob();headers['Content-Encoding']='gzip';}options={method:'POST',headers,body};}
+  const response = await fetch('/api/' + path,options);
   if (!response.ok) { const data = await response.json(); throw Error(data.error || '요청을 처리하지 못했어요.'); }
   return response;
 }
@@ -58,6 +66,9 @@ function resize() {
 }
 new ResizeObserver(resize).observe($('scene-wrap'));
 new ResizeObserver(fitTexture).observe($('texture-scroll'));
+const gpuNotice=document.createElement('div');gpuNotice.className='gpu-notice';gpuNotice.hidden=!renderer.isFallback;gpuNotice.textContent=t('gpuUnavailable');$('scene-wrap').append(gpuNotice);
+renderer.domElement.addEventListener('webglcontextlost',event=>{event.preventDefault();gpuNotice.hidden=false;gpuNotice.textContent=t('gpuLost');});
+renderer.domElement.addEventListener('webglcontextrestored',()=>{gpuNotice.hidden=true;for(const doc of state.docs.values()){if(doc.texture)doc.texture.needsUpdate=true;for(const material of doc.materials)material.needsUpdate=true;}invalidate();});
 function animate() { requestAnimationFrame(animate); controls.update(); if (renderNeeded) { renderer.render(scene, camera); renderNeeded = false; drawGizmo(); drawImageHandles(); } }
 camera.position.set(20, 12, 20); controls.target.set(0, 1, 0); animate();
 function drawGizmo() {
@@ -176,15 +187,19 @@ async function installModel(object, source, savedDocuments = []) {
   if (!meshes.length) throw Error('표시할 메시가 없는 모델이에요.');
   for (const mesh of meshes) for (const m of [].concat(mesh.material)) docs.get(materialDocuments.get(m))?.meshes.add(mesh);
   for (const saved of savedDocuments) {
-    const doc = docs.get(saved.key) || [...docs.values()].find(d => d.name === saved.name);
+    const doc = docs.get(saved.key) || [...docs.values()].find(d => d.name === saved.name||d.target===saved.target);
     if (!doc) { disposeModel(object); throw Error('원본 모델에서 텍스처를 찾지 못했어요: ' + saved.name); }
     initializeDocument(doc);
-    if (doc.base.width !== saved.width || doc.base.height !== saved.height) { disposeModel(object); throw Error('원본 텍스처 크기가 바뀌었어요: ' + saved.name); }
+    if (doc.base.width !== saved.width || doc.base.height !== saved.height) {
+      if(!confirm(t('resizeProjectTexture',{name:saved.name}))){disposeModel(object);throw Error(t('projectResizeCancelled'));}
+      for(const row of saved.layers)if(row.raster){const resized=canvas(doc.base.width,doc.base.height);resized.getContext('2d').drawImage(row.raster,0,0,doc.base.width,doc.base.height);row.raster=resized;}
+      saved.width=doc.base.width;saved.height=doc.base.height;
+    }
     for (const row of saved.layers) if (row.raster && (row.raster.width !== saved.width || row.raster.height !== saved.height)) { disposeModel(object); throw Error('페인트 레이어 크기가 원본과 달라요.'); }
     doc.layers = saved.layers; doc.target = saved.target;
   }
   // Swap only after geometry and texture discovery have succeeded.
-  await accelerateMeshes(meshes);
+  try{await accelerateMeshes(meshes);}catch{message(t('workerFallback'));}
   if (model) { scene.remove(model); disposeModel(model); }
   for (const doc of state.docs.values()){doc.texture?.dispose();doc.patchTexture?.dispose();}
   model = object; scene.add(model); model.updateMatrixWorld(true);
@@ -301,7 +316,7 @@ function drawNow(doc = current()) {
     doc.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); doc.texture.generateMipmaps = false; doc.texture.minFilter = THREE.LinearFilter;
     for (const m of doc.materials) { m.map = doc.texture; m.needsUpdate = true; }
   }
-  const limit = Number($('preview-quality').value), ratio = Math.min(1, limit / Math.max(c.width,c.height));
+  const limit = Math.min(Number($('preview-quality').value),renderer.capabilities.maxTextureSize||4096), ratio = Math.min(1, limit / Math.max(c.width,c.height));
   const w=Math.round(c.width*ratio), h=Math.round(c.height*ratio);
   const resized=doc.preview.width!==w||doc.preview.height!==h;
   if (resized) {doc.texture.dispose();doc.preview.width=w;doc.preview.height=h;}
@@ -352,21 +367,24 @@ function thumb(row) {
 function renderLayers() {
   const doc = current(); $('layers').replaceChildren();
   if (!doc) return;
+  const groups=new Map();
   for (const row of [...doc.layers].reverse()) {
-    const el = document.createElement('div'); el.className = 'layer-row' + (row.id === state.activeLayer ? ' selected' : ''); el.tabIndex = 0;
+    const el = document.createElement('div'); el.className = 'layer-row' + ((state.selectedLayers?.has(row.id)||row.id===state.activeLayer) ? ' selected' : ''); el.tabIndex = 0;
     const check = document.createElement('input'); check.type = 'checkbox'; check.checked = row.visible; check.setAttribute('aria-label', row.name + ' 표시');
     check.onclick = e => e.stopPropagation(); check.onchange = () => { checkpoint(); row.visible = check.checked; changed(); };
     const image = document.createElement('img'); image.className = 'layer-thumb'; image.src = thumb(row); image.alt = '';
     const label = document.createElement('span'); label.className = 'layer-label'; label.textContent = row.name;
-    const small = document.createElement('small'); small.textContent = row.kind === 'image' ? 'IMG' : 'PAINT'; el.append(check, image, label, small);
-    el.onclick = () => { state.activeLayer = row.id; if(row.kind==='image')setTool('image');renderLayers(); syncProperties(); invalidate(); }; el.onkeydown = e => { if (e.key === 'Enter') el.click(); }; $('layers').append(el);
+    const small = document.createElement('small'); small.textContent = (row.locked?'LOCK · ':'')+(row.group?row.group+' · ':'')+(row.kind === 'image' ? 'IMG' : 'PAINT'); el.append(check, image, label, small);
+    el.onclick = event => {if(event.ctrlKey||event.metaKey){state.selectedLayers??=new Set();state.selectedLayers.has(row.id)?state.selectedLayers.delete(row.id):state.selectedLayers.add(row.id);}else state.selectedLayers=new Set([row.id]);state.activeLayer = row.id; if(row.kind==='image')setTool('image');renderLayers(); syncProperties(); invalidate(); }; el.onkeydown = e => { if (e.key === 'Enter') el.click(); };
+    let host=$('layers');if(row.group){if(!groups.has(row.group)){const container=document.createElement('details');container.open=true;const summary=document.createElement('summary');summary.textContent=row.group;summary.onclick=()=>{state.selectedLayers=new Set(doc.layers.filter(r=>r.group===row.group).map(r=>r.id));state.activeLayer=row.id;syncProperties();invalidate();};container.append(summary);groups.set(row.group,container);$('layers').append(container);}host=groups.get(row.group);}host.append(el);
   }
   const base = document.createElement('div'); base.className = 'layer-row'; base.textContent = '원본 텍스처 · 읽기 전용'; $('layers').append(base);
   syncUndo();
 }
 function syncProperties() {
-  const row = layer(), exists = !!row;
-  for (const id of ['layer-name', 'blend', 'opacity', 'duplicate-layer', 'layer-up', 'layer-down', 'delete-layer']) $(id).disabled = !exists;
+  const row = layer(), exists = !!row&&!row.locked;
+  for (const id of ['layer-name', 'blend', 'opacity', 'duplicate-layer', 'layer-up', 'layer-down', 'delete-layer','layer-x','layer-y','layer-scale','layer-rotation','flip']) $(id).disabled = !exists;
+  $('delete-layer').disabled=!current()?.layers.some(r=>!r.locked&&(r.id===state.activeLayer||state.selectedLayers?.has(r.id)));
   $('transform-panel').hidden = row?.kind !== 'image'; $('layer-type').textContent = row?.kind === 'image' ? 'IMAGE' : row ? 'PAINT' : '—';
   if (!row) return;
   $('layer-name').value = row.name; $('blend').value = row.blend; $('opacity').value = row.opacity * 100; $('opacity-value').textContent = Math.round(row.opacity * 100) + '%';
@@ -374,11 +392,8 @@ function syncProperties() {
 }
 function checkpoint() {
   const doc = current(); if (!doc) return;
-  const snapshot = {key: doc.key, active: state.activeLayer, layers: cloneLayers(doc.layers)};
-  state.undo.push(snapshot); state.redo = [];
-  const cost=s=>s.layers.reduce((n,l)=>n+(l.raster?l.raster.width*l.raster.height*4:0),0);
-  let bytes = state.undo.reduce((n, s) => n+cost(s),0);
-  while (state.undo.length > 16 || (bytes > 192 * 1024 * 1024 && state.undo.length > 1)) { const removed = state.undo.shift(); bytes -= cost(removed); }
+  state.undo.push(snapshot(doc,state.activeLayer)); state.redo = [];
+  while(state.undo.length>32)state.undo.shift();
   syncUndo();
 }
 function syncUndo() { $('undo').disabled = !state.undo.length; $('redo').disabled = !state.redo.length; }
@@ -386,17 +401,17 @@ async function history(from, to) {
   if (stroke || imageDrag || projectionDrag || loading) return;
   const snapshot = state[from].at(-1); if (!snapshot) return;
   const doc = state.docs.get(snapshot.key); if (!doc) return;
-  const rows = cloneLayers(snapshot.layers);
-  state[from].pop(); state[to].push({key: doc.key, active: state.activeLayer, layers: cloneLayers(doc.layers)});
-  doc.layers = rows; selectDoc(doc.key); state.activeLayer = snapshot.active; changed();
+  state[from].pop();state[to].push(restoreSnapshot(snapshot,doc,state.activeLayer));
+  selectDoc(doc.key); state.activeLayer = snapshot.active;state.selectedLayers=new Set(snapshot.active?[snapshot.active]:[]); changed();drawNow(doc);
 }
 function changed() { draw(); renderLayers(); syncProperties(); markDirty(); }
 function markDirty() {
+  state.revision=(state.revision||0)+1;
   invalidate();
   state.dirty = true; $('save-state').textContent = '저장하지 않은 변경';
   clearTimeout(autosaveTimer); autosaveTimer = setTimeout(() => saveDraft().catch(error => message('자동 복구 저장 실패: ' + error.message, true)), 1800);
 }
-function addLayer(row) { const doc = current(); if (!doc) throw Error('모델과 텍스처를 먼저 선택하세요.'); if (doc.layers.length >= 40) throw Error('텍스처당 최대 40개 레이어를 지원해요.'); doc.layers.push(row); state.activeLayer = row.id; changed(); }
+function addLayer(row) { const doc = current(); if (!doc) throw Error('모델과 텍스처를 먼저 선택하세요.'); if (doc.layers.length >= 40) throw Error('텍스처당 최대 40개 레이어를 지원해요.'); doc.layers.push(row); state.activeLayer = row.id;state.selectedLayers=new Set([row.id]); changed(); }
 function setTool(tool) {
   state.tool = tool; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
   controls.enabled = true;
@@ -410,17 +425,18 @@ function beginPaint() {
   const doc = current(); if (!doc) return null;
   if(state.channel!=='albedo'){message('재질 채널은 미리보기예요. 색상 탭에서 편집하세요.',true);return null;}
   if ($('compare').checked) { message('원본 비교를 끄고 편집하세요.', true); return null; }
+  if(layer()?.kind==='paint'&&layer().locked)return null;
   checkpoint();
   let row = layer(); if (!row || row.kind !== 'paint') { if (doc.layers.length >= 40) throw Error('레이어 수가 너무 많아요.'); row = newPaint(doc, '페인트 ' + (doc.layers.length + 1)); doc.layers.push(row); state.activeLayer = row.id; }
   row.visible = true; return row;
 }
 function paintPoint(row, x, y, previous) {
   const ctx = row.raster.getContext('2d'), r = Number($('brush-size').value);
-  ctx.save(); ctx.globalCompositeOperation = state.tool === 'erase' ? 'destination-out' : 'source-over'; ctx.fillStyle = $('color').value; ctx.strokeStyle = $('color').value; ctx.lineWidth = r; ctx.lineCap = ctx.lineJoin = 'round';
-  if (previous) { ctx.beginPath(); ctx.moveTo(previous.x, previous.y); ctx.lineTo(x, y); ctx.stroke(); }
-  ctx.beginPath(); ctx.arc(x, y, r / 2, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   const left=Math.max(0,Math.floor(Math.min(x,previous?.x??x)-r/2-2)),top=Math.max(0,Math.floor(Math.min(y,previous?.y??y)-r/2-2));
   const region={x:left,y:top,w:Math.ceil(Math.max(x,previous?.x??x)+r/2+2)-left,h:Math.ceil(Math.max(y,previous?.y??y)+r/2+2)-top};
+  capturePaint(state.undo.at(-1),row,region);
+  partMask.paint(ctx,x,y,previous,{size:r,color:$('color').value,hardness:Number($('brush-hardness')?.value??100)/100,opacity:Number($('brush-opacity')?.value??100)/100,spacing:Number($('brush-spacing')?.value??15)/100,erase:state.tool==='erase'},region);
+  while(state.undo.reduce((n,s)=>n+historyBytes(s),0)>192*1024*1024&&state.undo.length>1)state.undo.shift();
   if(stroke?.straight)stroke.straight.region=unionRegion(stroke.straight.region,region);draw(current(),region);
 }
 function straightPreview(shift){
@@ -436,13 +452,13 @@ $('texture-canvas').addEventListener('pointerdown', action(event => {
   if(state.channel!=='albedo'){message('색상 탭에서 편집하세요.',true);return;}
   if(state.tool==='image'&&state.image){checkpoint();const p=texturePoint(event),doc=current(),row=newImage(doc,state.image,state.imageName);row.x=p.x/doc.base.width;row.y=p.y/doc.base.height;addLayer(row);state.image=null;return;}
   if (state.tool === 'brush' || state.tool === 'erase') { const row = beginPaint(); if (!row) return; stroke = {row, previous: texturePoint(event), where: '2d'}; paintPoint(row, stroke.previous.x, stroke.previous.y); }
-  else if (layer()?.kind === 'image' && !layer().projection && (state.tool === 'image' || state.tool === 'orbit')) { checkpoint(); const p = texturePoint(event); imageDrag = {p, x: layer().x, y: layer().y, id: layer().id}; }
+  else if (layer()?.kind === 'image' && !layer().locked && !layer().projection && (state.tool === 'image' || state.tool === 'orbit')) { checkpoint(); const p = texturePoint(event); imageDrag = {p, x: layer().x, y: layer().y, id: layer().id,peers:current().layers.filter(r=>r.kind==='image'&&!r.locked&&state.selectedLayers?.has(r.id)).map(r=>({id:r.id,x:r.x,y:r.y}))}; }
   else return;
   $('texture-canvas').setPointerCapture(event.pointerId);
 }));
 $('texture-canvas').addEventListener('pointermove', event => {
   if (stroke?.where === '2d') {const samples=event.getCoalescedEvents?.();for (const sample of event.shiftKey?[event]:samples?.length?samples:[event]) {straightPreview(event.shiftKey); const p = texturePoint(sample); paintPoint(stroke.row, p.x, p.y, stroke.previous); stroke.previous = p; } }
-  else if (imageDrag) { const p = texturePoint(event), row = layer(), doc = current(); row.x = imageDrag.x + (p.x - imageDrag.p.x) / doc.base.width; row.y = imageDrag.y + (p.y - imageDrag.p.y) / doc.base.height; draw(); syncProperties(); }
+  else if (imageDrag) { const p = texturePoint(event), row = layer(), doc = current(),dx=(p.x-imageDrag.p.x)/doc.base.width,dy=(p.y-imageDrag.p.y)/doc.base.height; row.x = imageDrag.x + dx; row.y = imageDrag.y +dy;for(const peer of imageDrag.peers){const r=doc.layers.find(r=>r.id===peer.id);if(r){r.x=peer.x+dx;r.y=peer.y+dy;}} draw(); syncProperties(); }
 });
 function endGesture() { if (stroke || imageDrag) { stroke = null; imageDrag = null; changed(); } }
 $('texture-canvas').addEventListener('pointerup', endGesture); $('texture-canvas').addEventListener('pointercancel', endGesture);
@@ -463,7 +479,7 @@ function projectionOptions(row,doc) {
   up.addScaledVector(normal,-up.dot(normal)).normalize();if(up.lengthSq()<.1)up.set(0,0,1).addScaledVector(normal,-normal.z).normalize();
   const right=new THREE.Vector3().crossVectors(up,normal).normalize();
   const point=new THREE.Vector3().fromArray(p.origin).addScaledVector(right,(row.x-.5)*extent).addScaledVector(up,(.5-row.y)*extent);
-  return {...p,point:point.toArray(),width:extent*row.scale,rotation:row.rotation*Math.PI/180,flip:row.flip,flipY:doc.flipY,centerX:center.x};
+  return {...p,point:point.toArray(),width:extent*row.scale,rotation:row.rotation*Math.PI/180,flip:row.flip,flipYImage:row.flipYImage,flipY:doc.flipY,centerX:center.x};
 }
 function clearProjectionPreview(){if(!projectionPreview)return;scene.remove(projectionPreview);projectionPreview.geometry.dispose();projectionPreview.material.map.dispose();projectionPreview.material.dispose();projectionPreview=null;invalidate();}
 function previewProjection(row,doc){
@@ -471,7 +487,7 @@ function previewProjection(row,doc){
   up.addScaledVector(normal,-up.dot(normal)).normalize();if(up.lengthSq()<.1)up.set(0,0,1).addScaledVector(normal,-normal.z).normalize();
   const right=new THREE.Vector3().crossVectors(up,normal).normalize();up.applyAxisAngle(normal,o.rotation);right.applyAxisAngle(normal,o.rotation);
   if(!projectionPreview){const texture=new THREE.Texture(row.image);texture.colorSpace=THREE.SRGBColorSpace;texture.needsUpdate=true;projectionPreview=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:texture,transparent:true,opacity:.85,depthWrite:false,side:THREE.DoubleSide}));scene.add(projectionPreview);}
-  const texture=projectionPreview.material.map;texture.repeat.x=row.flip?-1:1;texture.offset.x=row.flip?1:0;
+  const texture=projectionPreview.material.map;texture.repeat.set(row.flip?-1:1,row.flipYImage?-1:1);texture.offset.set(row.flip?1:0,row.flipYImage?1:0);
   projectionPreview.position.fromArray(o.point).addScaledVector(normal,extent*.0005);projectionPreview.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right,up,normal));projectionPreview.scale.set(o.width,o.width*row.image.height/row.image.width,1);invalidate();
 }
 function imageHandlePoints(row,doc){
@@ -486,7 +502,7 @@ function imageHandlePoints(row,doc){
 function drawImageHandles(){
   if(!imageHandles)return;
   const row=projectionDrag?.candidate||layer(),doc=projectionDrag?.doc||current();
-  if(!row?.projection||!doc||(!row.visible&&!projectionDrag)||$('compare').checked){imageHandles.replaceChildren();return;}
+  if(!row?.projection||row.locked||!doc||(!row.visible&&!projectionDrag)||$('compare').checked){imageHandles.replaceChildren();return;}
   const {center,corners}=imageHandlePoints(row,doc);if(center.z<-1||center.z>1){imageHandles.replaceChildren();return;}
   const top={x:(corners[0].x+corners[1].x)/2,y:(corners[0].y+corners[1].y)/2},length=Math.hypot(top.x-center.x,top.y-center.y)||1,rotation={x:top.x+(top.x-center.x)/length*28,y:top.y+(top.y-center.y)/length*28};
   imageHandles.innerHTML=`<polygon points="${corners.map(p=>`${p.x},${p.y}`).join(' ')}"/><line x1="${top.x}" y1="${top.y}" x2="${rotation.x}" y2="${rotation.y}"/>${corners.map((p,i)=>`<rect data-handle="scale" data-corner="${i}" x="${p.x-6}" y="${p.y-6}" width="12" height="12"/>`).join('')}<circle data-handle="rotate" cx="${rotation.x}" cy="${rotation.y}" r="7"/>`;
@@ -517,6 +533,7 @@ function updateProjectedLayer(row,doc=current()) {
   }).catch(report).finally(()=>pendingProjections.delete(task));pendingProjections.add(task);return task;
 }
 function beginImageMove(hit,event){
+  if(layer()?.locked&&!state.image)return;
   if(state.channel!=='albedo')throw Error('색상 탭에서 이미지를 투영하세요.');
   const image=state.image|| (layer()?.kind==='image'?layer().image:null);if(!image)throw Error(t('chooseImageLayer'));
   const material=[].concat(hit.object.material)[hit.face.materialIndex],key=material.userData.docKey;
@@ -540,17 +557,20 @@ function finishImageMove(cancel=false){
   if(row&&!moved&&!mode){invalidate();return;}
   if(cancel){draw(doc);return;}
   checkpoint();candidate.visible=true;
+  const peers=row?doc.layers.filter(r=>r.kind==='image'&&!r.locked&&r.id!==row.id&&state.selectedLayers?.has(r.id)):[];
+  for(const peer of peers){const scaleRatio=candidate.scale/row.scale,rotationDelta=candidate.rotation-row.rotation;peer.scale*=scaleRatio;peer.rotation+=rotationDelta;
+    if(peer.projection){const oldPoint=new THREE.Vector3().fromArray(projectionOptions(peer,doc).point),pivot=new THREE.Vector3().fromArray(projectionOptions(row,doc).point),target=new THREE.Vector3().fromArray(projectionOptions(candidate,doc).point);oldPoint.sub(pivot).applyAxisAngle(new THREE.Vector3().fromArray(row.projection.normal),rotationDelta*Math.PI/180).multiplyScalar(scaleRatio).add(target);peer.x=peer.y=.5;peer.projection={...peer.projection,origin:oldPoint.toArray()};updateProjectedLayer(peer,doc);}}
   let target=row;if(row)Object.assign(row,candidate);else{target=candidate;target.raster=canvas(doc.base.width,doc.base.height);doc.layers.push(target);}
   state.activeLayer=target.id;state.image=null;changed();updateProjectedLayer(target,doc);
 }
 let pointerDown = null;
-function deselectImage(){if(layer()?.kind!=='image')return;state.activeLayer=null;renderLayers();syncProperties();invalidate();}
-function imageAtHit(hit){
+function deselectImage(){if(layer()?.kind!=='image')return;state.activeLayer=null;state.selectedLayers=new Set();if($('overlap-layers'))$('overlap-layers').hidden=true;renderLayers();syncProperties();invalidate();}
+function imagesAtHit(hit){
   if(!hit?.uv)return null;const material=[].concat(hit.object.material)[hit.face.materialIndex],doc=state.docs.get(material?.userData.docKey);if(!doc?.base)return null;
   const x=Math.min(doc.base.width-1,Math.floor(((hit.uv.x%1+1)%1)*doc.base.width)),y=Math.min(doc.base.height-1,Math.floor((doc.flipY?1-((hit.uv.y%1+1)%1):((hit.uv.y%1+1)%1))*doc.base.height));
-  for(const row of doc.layers.slice().reverse()){if(row.kind!=='image'||!row.visible||!row.opacity||!row.projection||!row.raster)continue;if(row.raster.getContext('2d').getImageData(x,y,1,1).data[3]>16)return{row,doc};}return null;
+  const result=[];for(const row of doc.layers.slice().reverse()){if(row.kind!=='image'||!row.visible||!row.opacity||!row.projection||!row.raster)continue;if(row.raster.getContext('2d').getImageData(x,y,1,1).data[3]>16)result.push({row,doc});}return result;
 }
-function selectImageHit(hit){const selected=imageAtHit(hit);if(!selected)return false;if(selected.doc.key!==state.activeDoc)selectDoc(selected.doc.key);state.activeLayer=selected.row.id;renderLayers();syncProperties();invalidate();return true;}
+function selectImageHit(hit,cycle=false){const candidates=imagesAtHit(hit)||[];if(!candidates.length)return false;const index=cycle?(candidates.findIndex(s=>s.row.id===state.activeLayer)+1)%candidates.length:0,selected=candidates[index];if(selected.doc.key!==state.activeDoc)selectDoc(selected.doc.key);state.activeLayer=selected.row.id;if(cycle||!state.selectedLayers?.has(selected.row.id))state.selectedLayers=new Set([selected.row.id]);const chooser=$('overlap-layers');if(chooser){chooser.replaceChildren(...candidates.map(s=>new Option(s.row.name,s.row.id)));chooser.value=selected.row.id;chooser.hidden=candidates.length<2;}renderLayers();syncProperties();invalidate();return true;}
 renderer.domElement.addEventListener('pointerdown', action(event => {
   if (event.button || !model || loading) return;
   pointerDown = {x: event.clientX, y: event.clientY};
@@ -558,7 +578,7 @@ renderer.domElement.addEventListener('pointerdown', action(event => {
   const hit = pick(event); if (!hit){deselectImage();return;}
   if (state.tool !== 'image') selectMesh(hit.object, hit.face.materialIndex);
   if ($('compare').checked) throw Error('원본 비교를 끄고 편집하세요.');
-  if (state.tool === 'image') {if(!state.image&&!selectImageHit(hit)){deselectImage();return;} beginImageMove(hit,event); return; }
+  if (state.tool === 'image') {if(!state.image&&!selectImageHit(hit,event.altKey)){deselectImage();return;} beginImageMove(hit,event); return; }
   const row = beginPaint(); if (!row || !hit.uv) return;
   stroke = {row, where: '3d', key: state.activeDoc, previous: null, screen: {x:event.clientX,y:event.clientY}, pointerId:event.pointerId};
   const x = ((hit.uv.x % 1 + 1) % 1) * row.raster.width, y = (current().flipY ? 1 - ((hit.uv.y % 1 + 1) % 1) : ((hit.uv.y % 1 + 1) % 1)) * row.raster.height;
@@ -592,7 +612,7 @@ renderer.domElement.addEventListener('pointermove', moveImageLayer);
 renderer.domElement.addEventListener('pointerup', action(event => {
   if(projectionDrag){moveImageLayer(event);finishImageMove();pointerDown=null;return;}
   moveSurfaceBrush(event);
-  if (state.tool === 'orbit' && pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 5) { const hit = pick(event); if(!selectImageHit(hit)){if(hit)selectMesh(hit.object, hit.face.materialIndex);deselectImage();} }
+  if (state.tool === 'orbit' && pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 5) { const hit = pick(event); if(!selectImageHit(hit,event.altKey)){if(hit)selectMesh(hit.object, hit.face.materialIndex);deselectImage();} }
   pointerDown = null; endGesture();
 }));
 renderer.domElement.addEventListener('pointercancel', ()=>{finishImageMove(true);endGesture();});
@@ -606,7 +626,7 @@ async function projectDataAsync(){
   await Promise.all([...pendingProjections]);
   // Freeze editable raster buffers before asynchronous PNG encoding.
   const result={schema:'wows-skin-workshop/v1',source:state.source,activeDoc:state.activeDoc,documents:[],hiddenParts:state.meshes.filter(m=>!m.visible).map(m=>m.name),xml:state.xml?new XMLSerializer().serializeToString(state.xml):null,xmlName:state.xmlName,xmlDirty:state.xmlDirty};
-  const docs=[...state.docs.values()].filter(d=>d.layers.length).map(d=>({key:d.key,name:d.name,width:d.base.width,height:d.base.height,target:d.target,layers:cloneLayers(d.layers)}));
+  const docs=[...state.docs.values()].filter(d=>d.layers.length).map(d=>({key:d.key,name:d.name,width:d.base.width,height:d.base.height,target:d.target,layers:d.layers.map(row=>({...row}))}));
   for(const doc of docs){doc.layers=await Promise.all(doc.layers.map(serializeLayerAsync));result.documents.push(doc);}return result;
 }
 async function openProject(value) {
@@ -620,7 +640,14 @@ async function openProject(value) {
   try {
     let source = value.source, object;
     if (source.format === 'glb-file') { const bytes = Uint8Array.from(atob(source.data), c => c.charCodeAt(0)); object = await parseEmbeddedGLB(bytes.buffer); }
-    else { source = await (await api('open-folder', {folder: source.folder})).json(); object = await prepareSource(source); }
+    else {
+      let resolved;
+      try{resolved=await(await api('resolve-source',{source})).json();}
+      catch(error){const folder=prompt(t('relinkModelPrompt'),source.folder||'');if(!folder)throw error;resolved=await(await api('resolve-source',{source,folder})).json();}
+      if(resolved.job){while(true){const job=await(await api('jobs/'+resolved.job)).json();if(job.status==='error'||job.status==='cancelled')throw Error(job.message);if(job.status==='done'){source=job.result;break;}await new Promise(r=>setTimeout(r,600));}}
+      else source=resolved.source;
+      object=await prepareSource(source);
+    }
     // Check stable texture identities and sizes before replacing the current document.
     await installModel(object, source, prepared);
     for (const doc of state.docs.values()) if (doc.layers.length) draw(doc);
@@ -631,11 +658,18 @@ async function openProject(value) {
   } finally { busy(false); }
 }
 async function draftDB() { return new Promise((resolve, reject) => { const request = indexedDB.open('wows-skin-workshop', 1); request.onupgradeneeded = () => request.result.createObjectStore('drafts'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+let savingDraft=null,lastBackupRevision=null;
 async function saveDraft() {
-  if (!state.source || loading || projectionDrag || stroke || imageDrag) return;
-  const value = await projectDataAsync(), db = await draftDB();
-  try { await new Promise((resolve, reject) => { const tx = db.transaction('drafts', 'readwrite'); tx.objectStore('drafts').put(value, 'latest'); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); $('save-state').textContent = '자동 복구 사본 저장됨'; }
-  finally { db.close(); }
+  if(savingDraft){await savingDraft;if(lastBackupRevision!==state.revision)return saveDraft();return true;}
+  if (!state.source)return true;
+  if(loading||projectionDrag||stroke||imageDrag){clearTimeout(autosaveTimer);autosaveTimer=setTimeout(()=>saveDraft().catch(report),1800);return false;}
+  const revision=state.revision;
+  savingDraft=(async()=>{const value=await projectDataAsync();if(revision!==state.revision){clearTimeout(autosaveTimer);autosaveTimer=setTimeout(()=>saveDraft().catch(report),1800);return;}
+    state.backupId=(await(await api('save-backup',value)).json()).id;lastBackupRevision=revision;
+    try{const db=await draftDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put(value,'latest');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}finally{db.close();}}catch{ /* Disk backup remains available if browser quota is exhausted. */ }
+    $('save-state').textContent=t('diskBackupSaved');
+    return true;
+  })();try{return await savingDraft;}finally{savingDraft=null;}
 }
 async function readDraft() {
   try { const db = await draftDB(); try { return await new Promise((resolve, reject) => { const req = db.transaction('drafts').objectStore('drafts').get('latest'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); } finally { db.close(); } } catch { return null; }
@@ -682,6 +716,8 @@ async function parseEmbeddedGLB(buffer) {
 // File and editor actions.
 const shipLibrary = new ShipLibrary(api, loadSource, report);
 setupViewportSplitter();
+setupWorkshopTools({api,state,openProject,projectDataAsync,saveDraft,checkpoint,changed,report,renderLayers,syncProperties,updateProjectedLayer,renderer,scene,keyLight,fillLight,current,deselectImage});
+const partMask=setupPartMask({state,current,category:name=>({ '선체':'hull','무장':'weapons','대공포':'aa','항공기':'aircraft'}[materialCategory({name,meshes:[]})]||'other'),paintStroke,renderer,pick});
 setupTextureImport({api,state,selectDoc,checkpoint,changed,busy,report});
 const replaceBlend=new Option(t('textureReplaceBlend'),'copy');$('blend').append(replaceBlend);
 let clickedAxis = null;
@@ -732,10 +768,10 @@ $('add-text').onclick = action(() => { const text = $('text-value').value.trim()
 $('fill-tool').onclick = action(() => { if (!current()) throw Error('모델을 먼저 열어주세요.'); checkpoint(); const row = newPaint(current(), '색 채우기'); const ctx = row.raster.getContext('2d'); ctx.fillStyle = $('color').value; ctx.fillRect(0, 0, row.raster.width, row.raster.height); addLayer(row); });
 $('new-layer').onclick = action(() => { if (!current()) throw Error('모델을 먼저 열어주세요.'); checkpoint(); addLayer(newPaint(current(), '페인트 ' + (current().layers.length + 1))); });
 $('duplicate-layer').onclick = action(async () => { await Promise.all([...pendingProjections]);const row = layer(); if (!row) return; checkpoint(); const [copy] = cloneLayers([row]); copy.id = uid(); copy.name += ' 복사'; addLayer(copy); });
-$('delete-layer').onclick = () => { if (!layer()) return; checkpoint(); const doc = current(); doc.layers = doc.layers.filter(row => row.id !== state.activeLayer); state.activeLayer = doc.layers.at(-1)?.id || null; changed(); };
+$('delete-layer').onclick = () => { if (!layer()) return;const ids=new Set(current().layers.filter(row=>!row.locked&&(row.id===state.activeLayer||state.selectedLayers?.has(row.id))).map(row=>row.id));if(!ids.size)return;checkpoint(); const doc = current(); doc.layers = doc.layers.filter(row => !ids.has(row.id));state.selectedLayers=new Set(); state.activeLayer = doc.layers.at(-1)?.id || null; changed(); };
 for (const [id, offset] of [['layer-up', 1], ['layer-down', -1]]) $(id).onclick = () => { if (!layer()) return; const rows = current().layers, i = rows.indexOf(layer()), j = i + offset; if (j < 0 || j >= rows.length) return; checkpoint(); [rows[i], rows[j]] = [rows[j], rows[i]]; changed(); };
 for (const [id, key, convert] of [['layer-name', 'name', v => v.slice(0, 100)], ['blend', 'blend', v => v], ['opacity', 'opacity', v => Number(v) / 100], ['layer-x', 'x', v => Number(v) / 100], ['layer-y', 'y', v => Number(v) / 100], ['layer-scale', 'scale', v => Number(v) / 100], ['layer-rotation', 'rotation', Number]]) {
-  $(id).addEventListener('change', () => { if (!layer()) return; const value = convert($(id).value); if (typeof value === 'number' && !Number.isFinite(value)) return; checkpoint(); layer()[key] = value; changed(); if(layer().projection&&['x','y','scale','rotation'].includes(key))updateProjectedLayer(layer()); });
+  $(id).addEventListener('change', () => { if (!layer()||layer().locked) return; const value = convert($(id).value); if (typeof value === 'number' && !Number.isFinite(value)) return;const old=layer()[key],rows=current().layers.filter(r=>!r.locked&&(r.id===state.activeLayer||state.selectedLayers?.has(r.id)));checkpoint();for(const row of rows){row[key]=row.id===state.activeLayer?value:['x','y','rotation'].includes(key)?row[key]+value-old:key==='scale'?row.scale*value/old:value;if(row.projection&&['x','y','scale','rotation'].includes(key))updateProjectedLayer(row);}changed(); });
 }
 $('flip').onchange = () => { if (!layer()) return; checkpoint(); layer().flip = $('flip').checked; changed();if(layer().projection)updateProjectedLayer(layer()); };
 $('undo').onclick = action(() => history('undo', 'redo')); $('redo').onclick = action(() => history('redo', 'undo'));
@@ -783,4 +819,6 @@ window.addEventListener('beforeunload', event => { if (state.dirty) { event.prev
 syncUndo(); syncProperties(); resize();
 // Read-only access for integration checks and diagnostics.
 window.workshop = {get state() { return state; }, get renderer() { return renderer; }, get camera() { return camera; }, get model() { return model; }, projectData};
+const restartBackup=localStorage.getItem('workshop.restartBackup');if(restartBackup){localStorage.removeItem('workshop.restartBackup');api('read-backup',{id:restartBackup}).then(r=>r.json()).then(openProject).catch(report);}
 initI18n();
+$('ui-language').onchange=action(async()=>{const next=$('ui-language').value;if(!await saveDraft()){$('ui-language').value=language;throw Error(t('finishEditBeforeBackup'));}if(state.backupId)localStorage.setItem('workshop.restartBackup',state.backupId);localStorage.setItem('workshop.language',next);state.dirty=false;location.reload();});

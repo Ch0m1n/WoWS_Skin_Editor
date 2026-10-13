@@ -43,12 +43,12 @@ export class ShipLibrary {
     if(value.percent===null||value.percent===undefined)bar.removeAttribute('value');else bar.value=value.percent;
     const remaining=value.estimated_total_seconds-elapsed;
     const eta=value.estimated_total_seconds&&remaining>0?t('remainingEstimate',{seconds:Math.ceil(remaining)}):t('estimatingRemaining');
-    const stage=value.status==='queued'?t('queueWaiting'):value.percent===null||value.percent===undefined?t('packageStage'):t('conversionProgress',{percent:value.percent});
+    const stage=value.status==='paused'?t('queuepaused'):value.status==='queued'?t('queueWaiting'):value.percent===null||value.percent===undefined?t('packageStage'):t('conversionProgress',{percent:value.percent});
     $('ship-progress-details').textContent=`${stage} · ${t('elapsedTime',{seconds:elapsed})} · ${eta}`;
   }
   async refreshQueue(){
     const {jobs}=await(await this.api('preparations')).json();this.jobs=jobs;
-    const active=jobs.filter(j=>['queued','running','cancelling'].includes(j.status));$('preparation-summary').textContent=t('queueSummary',{count:active.length});
+    const active=jobs.filter(j=>['queued','running','paused','cancelling'].includes(j.status));$('preparation-summary').textContent=t('queueSummary',{count:active.length});
     $('preparation-jobs').replaceChildren(...jobs.slice().reverse().map(job=>{const row=document.createElement('div');row.className='preparation-job';row.textContent=`${job.name} · ${t('queue'+job.status)}${job.percent!==null&&job.status==='running'?' · '+job.percent+'%':''}`;row.title=t(job.message||'');if(['queued','running'].includes(job.status)){const cancel=document.createElement('button');cancel.textContent=t('cancelPreparation');cancel.onclick=()=>this.cancel(job.id).catch(this.report);row.append(cancel);}return row;}));
     for(const card of document.querySelectorAll('.ship-card')){
       const job=jobs.find(j=>j.game===this.game&&j.code===card.dataset.code),badge=card.querySelector('.ship-prepared');

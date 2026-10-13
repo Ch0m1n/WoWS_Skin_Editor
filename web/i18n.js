@@ -1,6 +1,17 @@
 // Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
 export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
 const messages = {
+  memoryBudgetExceeded:{ko:'편집 버퍼가 1 GiB를 넘어요. 백업 후 평면화하고 되돌리기 이력을 비우세요.',en:'Editing buffers exceed 1 GiB. Back up, flatten and clear undo history.'},
+  resizeProjectTexture:{ko:'{name}: 게임 텍스처 크기가 바뀌었어요. 레이어를 새 크기에 맞춰 복원할까요?',en:'{name}: game texture dimensions changed. Resize layers to restore this project?'},
+  projectResizeCancelled:{ko:'텍스처 크기 변경 복원을 취소했어요.',en:'Texture resize recovery cancelled.'},
+  queuepaused:{ko:'일시정지',en:'Paused'},queueinvalidated:{ko:'재준비 필요',en:'Needs refresh'},
+  gpuUnavailable:{ko:'3D를 사용할 수 없어요. 2D 화면에서 텍스처 편집·저장·출력을 사용할 수 있어요.',en:'3D is unavailable. Use the 2D editor to edit, save and export textures.'},
+  gpuLost:{ko:'3D 화면 연결이 끊겼어요. 작업 관리에서 화면을 복구하거나 2D로 계속 작업하세요.',en:'3D context lost. Recover it in Workspace, or continue in 2D.'},
+  workerFallback:{ko:'빠른 표면 검사를 사용할 수 없어 기본 검사로 표시해요.',en:'Accelerated picking unavailable; using standard picking.'},
+  importSkinFolder:{ko:'스킨 폴더 일괄 가져오기',en:'Import skin folder'},
+  relinkModelPrompt:{ko:'기존 모델을 찾지 못했어요. OBJ/MTL 폴더의 새 경로를 입력하세요.',en:'Original model not found. Enter its new OBJ/MTL folder path.'},
+  finishEditBeforeBackup:{ko:'현재 편집 동작을 마친 뒤 백업하세요.',en:'Finish the current edit before backing up.'},
+  diskBackupSaved:{ko:'함선별 디스크 백업 저장됨',en:'Ship backup saved to disk'},
   chooseGameFolder:{ko:'워쉽 설치 폴더를 지정해주세요.',en:'Choose your World of Warships installation folder.'},
   openSelectedShip:{ko:'선택 함선 열기',en:'Open selected ship'},openNamedShip:{ko:'{name} 열기',en:'Open {name}'},
   shipSelected:{ko:'{name} 선택됨 · 열기 버튼을 눌러 준비를 시작하세요.',en:'{name} selected · press Open to start preparation.'},
@@ -11,7 +22,7 @@ const messages = {
   textureImportHelp:{ko:'PNG/DDS 이름으로 재질을 찾아요. 각 파일의 적용 텍스처를 확인한 뒤 가져오세요. 원본 파일은 수정하지 않아요.',en:'Match PNG/DDS files by name, then choose their target materials. Source files remain unchanged.'},
   applyTextureImport:{ko:'편집 레이어로 가져오기',en:'Import as editable layers'},readingExternalTextures:{ko:'외부 스킨 텍스처를 읽는 중이에요.',en:'Reading external skin textures…'},
   chooseTextureTarget:{ko:'적용할 텍스처 선택',en:'Choose target texture'},chooseAllTextureTargets:{ko:'모든 파일의 적용 텍스처를 선택해주세요.',en:'Choose a target for every file.'},
-  externalTextureTooLarge:{ko:'텍스처 파일은 32 MiB 이하로 선택하세요.',en:'Texture files must be 32 MiB or smaller.'},
+  externalTextureTooLarge:{ko:'텍스처 파일은 96 MiB 이하로 선택하세요.',en:'Texture files must be 96 MiB or smaller.'},
   duplicateTextureTarget:{ko:'같은 텍스처에 여러 파일을 동시에 적용할 수 없어요.',en:'Assign a different target to each file.'},
   textureSizeMismatch:{ko:'{name}: 원본 재질과 텍스처 크기가 달라요.',en:'{name}: dimensions differ from the original material.'},
   tooManyTextureLayers:{ko:'텍스처당 최대 40개 레이어를 지원해요.',en:'Up to 40 layers are supported per texture.'},

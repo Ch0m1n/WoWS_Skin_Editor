@@ -10,6 +10,11 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import game_library as g
 
 class LibraryTests(unittest.TestCase):
+    def setUp(self):
+        self.storage=tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.home_patch=patch.object(g.project_store,'HOME',Path(self.storage.name));self.home_patch.start()
+    def tearDown(self):
+        g.EXTRACTION_QUEUE.join();self.home_patch.stop();self.storage.cleanup()
     def test_cancel_queued_job_does_not_run_and_can_retry(self):
         entered=threading.Event();release=threading.Event();ran=threading.Event()
         blocker=g.start_job('block-'+str(time.time()),lambda p:(entered.set(),release.wait(3)),serial=True)

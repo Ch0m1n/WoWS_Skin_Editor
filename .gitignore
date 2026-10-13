@@ -6,3 +6,4 @@ tests/output/
 *.pid
 .cache/
 dist/
+tests/runtime-data/

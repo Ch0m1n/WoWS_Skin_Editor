@@ -1,3 +1,9 @@
+## v0.2 — 2026-10-13
+
+함선별 디스크 백업, 모델 재연결, 레이어 그룹·잠금·다중 선택, 브러시 설정·부품 마스크·선택 영역, 저장되는 추출 대기열, 캐시 관리, 서버·화면 진단을 추가했어요.
+
+[릴리스 안내](RELEASE-v0.2.md)
+
 # v0.1 — 2026-10-13
 
 First public Windows portable release of WoWS Skin Editor.

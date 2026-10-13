@@ -12,7 +12,7 @@ self.onmessage=event=>{
     }
     const output=new OffscreenCanvas(width,height),context=output.getContext('2d');
     let source=image;
-    if(options.flip){const c=new OffscreenCanvas(image.width,image.height),ctx=c.getContext('2d');ctx.translate(image.width,0);ctx.scale(-1,1);ctx.drawImage(image,0,0);source=c;}
+    if(options.flip||options.flipYImage){const c=new OffscreenCanvas(image.width,image.height),ctx=c.getContext('2d');ctx.translate(options.flip?image.width:0,options.flipYImage?image.height:0);ctx.scale(options.flip?-1:1,options.flipYImage?-1:1);ctx.drawImage(image,0,0);source=c;}
     const vector=a=>new THREE.Vector3().fromArray(a);
     const args={...options,image:source,context,point:vector(options.point),normal:vector(options.normal),cameraUp:vector(options.cameraUp)};
     let count=0;
