@@ -1,5 +1,13 @@
 import {t} from './i18n.js';
 export const MAX_DIMENSION = 4096;
+export const MAX_LAYERS = 40;
+export const MAX_SCALE = 10;
+export const MAX_PROJECT_BYTES = 96 * 1024 * 1024;
+export function validateLayer(layer) {
+  if(!Number.isFinite(layer.opacity)||layer.opacity<0||layer.opacity>1)throw Error(t('invalidLayerValues'));
+  if(layer.kind==='image'&&(!['x','y','scale','rotation'].every(k=>Number.isFinite(layer[k]))||layer.scale<=0||layer.scale>MAX_SCALE))throw Error(t('invalidLayerValues'));
+}
+export function validateLayers(rows){if(rows.length>MAX_LAYERS)throw Error(t('layerLimit'));rows.forEach(validateLayer);}
 const buffers=new Set();
 export function canvasBytes(){let bytes=0;for(const reference of buffers){const c=reference.deref();if(!c)buffers.delete(reference);else bytes+=c.width*c.height*4;}return bytes;}
 export function canvas(width, height) {
@@ -70,8 +78,8 @@ export async function serializeLayerAsync(layer) {
   return {...rest,data,...(originalData?{originalData}: {})};
 }
 export function cloneLayers(rows){return rows.map(row=>{const copy={...row};if(row.raster){copy.raster=canvas(row.raster.width,row.raster.height);copy.raster.getContext('2d').drawImage(row.raster,0,0);}return copy;});}
-export async function restoreLayers(rows) {
-  if (!Array.isArray(rows) || rows.length > 40) throw Error('텍스처당 레이어는 최대 40개예요.');
+export async function restoreLayers(rows, {recover=false}={}) {
+  if (!Array.isArray(rows) || rows.length > (recover?256:MAX_LAYERS)) throw Error(t('layerLimit'));
   const result = [];
   for (const value of rows) {
     if (!['image', 'paint'].includes(value.kind) || !['source-over', 'multiply', 'screen', 'overlay', 'copy'].includes(value.blend)) throw Error('지원하지 않는 레이어 형식이에요.');
@@ -79,7 +87,7 @@ export async function restoreLayers(rows) {
     for (const key of ['opacity', ...(value.kind === 'image' ? ['x', 'y', 'scale', 'rotation'] : [])]) {
       if (!Number.isFinite(value[key])) throw Error('레이어 좌표가 올바르지 않아요.');
     }
-    if (value.opacity < 0 || value.opacity > 1 || (value.kind === 'image' && (value.scale <= 0 || value.scale > 10))) throw Error('레이어 값이 허용 범위를 벗어났어요.');
+    if (value.opacity < 0 || value.opacity > 1 || (value.kind === 'image' && (value.scale <= 0 || (!recover&&value.scale > MAX_SCALE)))) throw Error(t('invalidLayerValues'));
     const decoded = await imageFromURL(value.data), {data, originalData, ...row} = value;
     if(row.projection){
       const p=row.projection;

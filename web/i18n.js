@@ -1,6 +1,14 @@
 // Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
 export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
 const messages = {
+  modelChangedDuringSave:{ko:'저장 중 모델이 바뀌었어요. 현재 작업을 다시 저장하세요.',en:'The model changed during saving. Save the current project again.'},
+  unsupportedTextureUV:{ko:'이 GLB는 지원하지 않는 UV 또는 경계 래핑을 사용해요. UV를 0~1 범위로 굽거나 반복 래핑으로 내보내세요. 기존 작업은 유지돼요.',en:'This GLB uses unsupported UVs or boundary wrapping. Bake UVs into 0–1 or export with repeat wrapping. Current work is retained.'},
+  layerLimit:{ko:'텍스처당 레이어는 최대 40개예요.',en:'A texture can have up to 40 layers.'},
+  invalidLayerValues:{ko:'레이어 값이 허용 범위를 벗어났어요. 이미지 배율은 0보다 크고 10 이하여야 해요.',en:'Layer values are out of range. Image scale must be greater than 0 and at most 10.'},
+  recoverLegacyProject:{ko:'이전 버전에서 한도를 넘긴 레이어가 있어요. 해당 텍스처를 보이는 결과 그대로 한 레이어로 합쳐 복구할까요? 원본 프로젝트 파일은 유지돼요.',en:'This older project exceeds layer limits. Recover affected textures as single flattened layers? The original project file is retained.'},
+  recoveredLayer:{ko:'복구한 텍스처',en:'Recovered texture'},textureTooLarge:{ko:'텍스처는 4096 × 4096 이하로 열어주세요.',en:'Textures must be 4096 × 4096 or smaller.'},
+  projectTooLarge:{ko:'프로젝트가 96 MiB를 넘어요. 내장 모델 대신 폴더 모델을 사용하거나 백업 후 레이어를 평면화하세요.',en:'The project exceeds 96 MiB. Use a folder model instead of an embedded model, or back up and flatten layers.'},
+  projectSaved:{ko:'프로젝트 다운로드 요청됨',en:'Project download requested'},editedDuringSave:{ko:'저장 중 추가 편집 · 미저장 변경 있음',en:'Edited during save · unsaved changes remain'},projectDownloadRequested:{ko:'프로젝트 저장을 요청했어요. 다운로드 완료를 확인하세요.',en:'Project download requested. Check that the download completes.'},
   errorLog:{ko:'오류 로그',en:'Error log'},
   errorLogEmpty:{ko:'기록된 오류가 없어요.',en:'No errors recorded.'},
   errorOriginal:{ko:'상세 로그',en:'Detailed log'},

@@ -18,8 +18,8 @@ self.onmessage=event=>{
     let count=0;
     for(const target of targets){
       const mesh=meshes.get(target.id);mesh.matrix.fromArray(target.matrix);mesh.matrixWorld.copy(mesh.matrix);
-      count+=projectImage({...args,mesh,materialIndex:target.materialIndex});
-      if(options.mirror){const point=args.point.clone(),normal=args.normal.clone();point.x=2*options.centerX-point.x;normal.x*=-1;count+=projectImage({...args,mesh,materialIndex:target.materialIndex,point,normal,rotation:-args.rotation});}
+      count+=projectImage({...args,mesh,materialIndex:target.materialIndex,uvChannel:target.uvChannel,uvMatrix:target.uvMatrix});
+      if(options.mirror){const point=args.point.clone(),normal=args.normal.clone();point.x=2*options.centerX-point.x;normal.x*=-1;count+=projectImage({...args,mesh,materialIndex:target.materialIndex,uvChannel:target.uvChannel,uvMatrix:target.uvMatrix,point,normal,rotation:-args.rotation});}
     }
     const bitmap=output.transferToImageBitmap();self.postMessage({id,count,bitmap},[bitmap]);
   }catch(error){self.postMessage({id,error:error.message});}

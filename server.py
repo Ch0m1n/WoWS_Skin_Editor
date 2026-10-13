@@ -38,6 +38,14 @@ def safe_relative(value: str) -> str:
         raise ValueError('상대 경로만 사용하세요. 상위 폴더 이동은 허용하지 않아요.')
     return str(path)
 
+def windows_output_key(value: str) -> str:
+    value = safe_relative(value)
+    for part in PurePosixPath(value).parts:
+        stem=part.split('.')[0].upper()
+        if part.endswith(('.', ' ')) or any(c in part for c in '<>"|?*') or any(ord(c)<32 for c in part) or stem in {'CON','PRN','AUX','NUL',*[f'{p}{i}' for p in ('COM','LPT') for i in range(1,10)]}:
+            raise ValueError('Windows에서 사용할 수 없는 출력 파일 이름이에요.')
+    return value.casefold()
+
 
 def contained(root: Path, relative: str) -> Path:
     target = (root / safe_relative(relative)).resolve()
@@ -120,7 +128,8 @@ def resolve_source(payload):
         if job['status']!='done':raise ValueError(job['message'])
         result=register_source(Path(job['result']['folder']));result.update(code=code,game=info['id'],gameFolder=info['folder'],gameBuild=info['build'],language=language)
         return result
-    return {'job':game_library.start_job('resolve:'+code+':'+str(info['build']),work)}
+    signature=f"resolve:{info['id']}:{info['build']}:{code}:{language}:{game_library.ENGINE_ID}"
+    return {'job':game_library.start_job(signature,work,reuse_done=False)}
 
 
 def import_texture(payload):
@@ -179,9 +188,10 @@ def export_zip(payload: dict) -> bytes:
                 raise ValueError('한 번에 출력하는 픽셀 수가 너무 많아요. 나눠서 출력하세요.')
             filename = safe_relative(row.get('target') or f"textures/{row['name']}")
             filename = str(PurePosixPath(filename).with_suffix('.' + fmt))
-            if filename in names:
+            output_key=windows_output_key(filename)
+            if output_key in names or output_key=='workshop-export.json':
                 raise ValueError('두 텍스처의 출력 경로가 같아요. 경로를 구분하세요.')
-            names.add(filename)
+            names.add(output_key)
             if fmt == 'dds':
                 data = encode_dds(image, payload.get('compression', 'dxt5'), bool(payload.get('mipmaps', True)))
             else:
@@ -196,7 +206,7 @@ def export_zip(payload: dict) -> bytes:
             if not isinstance(xml, str) or len(xml) > 8 * 1024 * 1024:
                 raise ValueError('XML 크기가 너무 커요.')
             xml_name = safe_relative(payload.get('xmlName', 'camouflages.xml'))
-            if xml_name in names or xml_name == 'workshop-export.json':
+            if windows_output_key(xml_name) in names or windows_output_key(xml_name) == 'workshop-export.json':
                 raise ValueError('XML 출력 경로가 다른 파일과 겹쳐요.')
             archive.writestr(xml_name, xml)
         archive.writestr('workshop-export.json', json.dumps(manifest, ensure_ascii=False, indent=2))
@@ -279,6 +289,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            if getattr(self.server,'closing',False):return self.json({'error':'서버를 종료하고 있어요. 새 실행 화면에서 다시 시도하세요.'},503)
             self.check_host()
             if not self.headers.get('Content-Type', '').startswith('application/json'):
                 raise ValueError('JSON 요청이 필요해요.')
@@ -287,8 +298,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('요청 크기가 너무 커요.')
             raw=self.rfile.read(length)
             if self.headers.get('Content-Encoding')=='gzip':
-                with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:raw=stream.read(512*1024*1024+1)
-                if len(raw)>512*1024*1024:raise ValueError('프로젝트 데이터가 512 MiB를 넘어요. 텍스처를 평면화하세요.')
+                with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:raw=stream.read(MAX_BODY+1)
+                if len(raw)>MAX_BODY:raise ValueError('요청 데이터가 96 MiB를 넘어요. 텍스처를 나누거나 평면화하세요.')
             elif self.headers.get('Content-Encoding'):raise ValueError('지원하지 않는 압축 형식이에요.')
             payload = json.loads(raw)
             path = urlparse(self.path).path
@@ -309,7 +320,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/server-control':
                 action=payload.get('action')
                 if action not in ('restart','stop'): raise ValueError('지원하지 않는 서버 동작이에요.')
-                if any(j['status'] in ('running','paused','cancelling') for j in game_library.JOBS.values()): raise ValueError('진행 중인 준비 작업을 먼저 취소하세요.')
+                with game_library.LOCK:
+                    if any(j['status'] in ('queued','running','paused','cancelling') for j in game_library.JOBS.values()): raise ValueError('진행 중인 준비 작업을 먼저 취소하세요.')
+                    self.server.closing=True;game_library.SHUTTING_DOWN=True
                 game_library.persist_queue()
                 self.json({'action':action})
                 def finish():
@@ -346,12 +359,29 @@ class Handler(BaseHTTPRequestHandler):
             self.json({'error': str(error)}, 400)
 
 
+class WorkshopHTTPServer(ThreadingHTTPServer):
+    """Bound local request concurrency, including decompression buffers."""
+    def __init__(self,*args,**kwargs):
+        self.slots=threading.BoundedSemaphore(8)
+        super().__init__(*args,**kwargs)
+    def process_request(self,request,address):
+        request.settimeout(30)
+        if not self.slots.acquire(blocking=False):
+            try:request.sendall(b'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+            finally:self.shutdown_request(request)
+            return
+        try:super().process_request(request,address)
+        except Exception:self.slots.release();raise
+    def process_request_thread(self,request,address):
+        try:super().process_request_thread(request,address)
+        finally:self.slots.release()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
     discover_library()
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    server = WorkshopHTTPServer(('127.0.0.1', args.port), Handler)
     game_library.restore_queue()
     print(f'WoWS Skin Workshop: http://127.0.0.1:{args.port}', flush=True)
     try:

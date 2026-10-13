@@ -524,6 +524,8 @@ def prepare_pbr_materials(
     """Extract, convert, and publish PBR maps aligned to GLB material indices."""
 
     total_started = time.perf_counter()
+    # Separate conversion and selection caches for each requested output size.
+    if max_size: cache_root = cache_root / f'resolution-{max_size}'
     materials = document.get("materials", [])
     contract: dict = {
         "schema": SCHEMA,

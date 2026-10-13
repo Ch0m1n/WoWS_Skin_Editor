@@ -30,6 +30,7 @@ EXTRACTION_WORKER = None
 QUEUE_ORDER = []
 QUEUE_TASKS = {}
 PAUSED = False
+SHUTTING_DOWN = False
 sys.path.insert(0, str(ENGINE))
 
 def install_info(folder):
@@ -260,11 +261,14 @@ def cache_control(payload):
     return {'deleted':identity}
 
 
-def start_job(signature, work, serial=False, metadata=None):
+def start_job(signature, work, serial=False, metadata=None, reuse_done=True):
     global EXTRACTION_WORKER
     with LOCK:
+        if SHUTTING_DOWN:raise ValueError('서버를 종료하고 있어요. 새 실행 화면에서 다시 시도하세요.')
         for key, job in JOBS.items():
-            if job['signature'] == signature and job['status'] in ('queued', 'running', 'paused', 'cancelling', 'done'): return key
+            if job['signature'] == signature and job['status'] in (('queued', 'running', 'paused', 'cancelling', 'done') if reuse_done else ('queued', 'running', 'paused', 'cancelling')): return key
+        completed=[k for k,j in JOBS.items() if j['status'] in ('done','error','cancelled','invalidated')]
+        for old in completed[:-256]: JOBS.pop(old,None)
         key = uuid.uuid4().hex
         JOBS[key] = {'signature': signature, 'status': 'queued' if serial else 'running', 'message': '대기열에서 기다리는 중이에요.' if serial else '준비 중', 'started': time.time(), 'percent': None, **(metadata or {})}
     def progress(message, **details):
@@ -340,6 +344,11 @@ def catalog_job(key, refresh=False, language='ko'):
             rows = pc_catalog(folder, language, 'pc', cache_root=root / 'EngineCache')
             target.write_text(json.dumps(rows, ensure_ascii=False), encoding='utf-8')
         GAMES[key].setdefault('catalogs', {})[language] = rows
+        if refresh:
+            with LOCK:
+                signature=f'catalog:{key}:{GAMES[key]["build"]}:{language}:cache'
+                for job in JOBS.values():
+                    if job['signature']==signature and job['status']=='done':job['status']='invalidated'
         return {'game': install_info(folder), 'ships': rows, 'language': language, 'translation': str(translation)}
     return start_job(f'catalog:{key}:{GAMES[key]["build"]}:{language}:{uuid.uuid4().hex if refresh else "cache"}', work)
 

@@ -146,6 +146,7 @@ def _normalize(value: int | float, component_type: int) -> float:
 
 
 def accessor_values(document: dict, binary: bytes, index: int) -> list[tuple]:
+    if not isinstance(index,int) or index<0 or index>=len(document.get('accessors',[])):raise NativeGlbError('Invalid accessor index')
     try:
         accessor = document["accessors"][index]
         view = document["bufferViews"][accessor["bufferView"]]
@@ -160,6 +161,9 @@ def accessor_values(document: dict, binary: bytes, index: int) -> list[tuple]:
     packed_size = component_size * width
     stride = int(view.get("byteStride", packed_size))
     start = int(view.get("byteOffset", 0)) + int(accessor.get("byteOffset", 0))
+    view_start=int(view.get('byteOffset',0));view_length=int(view.get('byteLength',0))
+    if count<0 or count>10_000_000 or stride<packed_size or start<view_start or view_start<0 or view_length<0 or view_start+view_length>len(binary) or start+(count-1)*stride+packed_size>view_start+view_length:
+        raise NativeGlbError(f'Accessor {index} exceeds its buffer view')
     unpack = struct.Struct("<" + component_format * width).unpack_from
     normalized = bool(accessor.get("normalized"))
     result: list[tuple] = []
@@ -352,6 +356,8 @@ def image_payload(document: dict, binary: bytes, image: dict, source: Path) -> b
     if "bufferView" in image:
         view = document["bufferViews"][int(image["bufferView"])]
         start = int(view.get("byteOffset", 0))
+        length=int(view['byteLength'])
+        if start<0 or length<0 or start+length>len(binary):raise NativeGlbError('Image exceeds its buffer view')
         return binary[start : start + int(view["byteLength"])]
     uri = str(image.get("uri", ""))
     if uri.startswith("data:"):
@@ -359,7 +365,9 @@ def image_payload(document: dict, binary: bytes, image: dict, source: Path) -> b
 
         return base64.b64decode(uri.split(",", 1)[1])
     if uri:
-        return (source.parent / uri).read_bytes()
+        target=(source.parent / uri).resolve()
+        if not target.is_relative_to(source.parent.resolve()):raise NativeGlbError('External image URI escapes the model folder')
+        return target.read_bytes()
     raise NativeGlbError("Image has neither bufferView nor URI")
 
 

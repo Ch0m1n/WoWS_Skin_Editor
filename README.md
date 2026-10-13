@@ -1,8 +1,8 @@
-# WoWS Skin Editor v0.2.6
+# WoWS Skin Editor v0.2.7
 
 설치된 월드 오브 워쉽에서 함선을 골라 3D로 보면서 텍스처를 편집하는 로컬 작업대예요.
 
-[Windows 포터블 다운로드 / Download v0.2.6](https://github.com/Ch0m1n/WoWS_Skin_Editor/releases/tag/v0.2.6)
+[Windows 포터블 다운로드 / Download v0.2.7](https://github.com/Ch0m1n/WoWS_Skin_Editor/releases/tag/v0.2.7)
 
 On first launch, choose **English** or **한국어 / Korean**. Your browser remembers the choice.
 
@@ -17,7 +17,7 @@ the game's English `global.mo`.
 Select a ship, paint in 2D or 3D, add and transform image layers, import existing
 PNG/DDS skins, save `.wowskin` projects, and export PNG/DDS textures. You can queue
 other ships for extraction while editing. PSD layers and in-game installation are
-not supported in v0.2.6. This is an unofficial community tool; game assets are not
+not supported in v0.2.7. This is an unofficial community tool; game assets are not
 included. See [third-party notices](THIRD_PARTY_NOTICES.md) for bundled components.
 
 ## 실행
@@ -26,7 +26,7 @@ Windows에서 [Start-Workshop.cmd](Start-Workshop.cmd)를 두 번 클릭하세�
 서버가 켜지고 기본 브라우저에서 작업대가 열려요. 기본 주소는 <http://127.0.0.1:8766>이며,
 다른 버전이 이미 실행 중이면 기존 작업을 유지하고 다른 로컬 포트에서 새 버전을 열어요.
 
-**포터블 배포본**은 릴리스의 `WoWS_Skin_Editor-v0.2.6-Windows.zip`을 풀고 그 안의
+**포터블 배포본**은 릴리스의 `WoWS_Skin_Editor-v0.2.7-Windows.zip`을 풀고 그 안의
 `Start-Workshop.cmd`를 실행하세요. 설치된 월드오브워쉽 경로를 자동으로 탐지합니다.
 인터넷 연결이나 에셋 다운로드는 사용하지 않아요.
 
@@ -94,7 +94,7 @@ python server.py --port 8766
 편집 가능한 교체 레이어로 추가하며 투명도도 유지해요. PSD는 PNG 또는 DDS로 내보낸 뒤 가져오세요.
 PSD 안의 개별 레이어는 가져오지 않아요.
 
-## v0.2.6 작업 도구
+## v0.2.7 작업 도구
 
 - **브러시 설정**: 경도·불투명도·간격과 실제 작업 위치의 브러시 커서를 사용하세요.
 - **도색 부품 마스크**: 선체·무장·대공포·항공기·선택 부품을 제한하거나 2D 사각 영역을 선택하세요.
@@ -149,6 +149,8 @@ PSD 안의 개별 레이어는 가져오지 않아요.
   편집 캔버스 생성에는 1 GiB 보호 한도를 적용해요. 이는 프로그램 전체 RAM이나 GPU 사용량의 상한은 아니에요.
   외부 PNG/DDS 텍스처는 최대 96 MiB를 지원해요.
 - GLB와 OBJ의 UV 방향을 구분해 3D 투영해요.
+  GLB의 UV 채널·텍스처 회전·재질별 변환을 유지해요. 0~1 범위 밖의 UV에 clamp/mirrored 경계 래핑을 사용하는 GLB는 잘못 편집되는 것을 막기 위해 불러오기를 거부해요.
+  프로젝트 저장·열기는 96 MiB, 텍스처당 레이어는 40개로 제한해요. 이전 버전에서 한도를 초과한 프로젝트는 최대 256개 레이어까지 해당 텍스처를 평면화해 복구할 수 있어요.
 - 3D 투영은 선택한 적용 범위와 재질에만 구워요. 다른 재질의 반대편 부품에는 자동으로 복제하지 않아요.
   공유 UV는 여러 표면에 같은 무늬가 나타날 수 있어요. 실제 함선의 UV 상태에 따라 결과를 확인하세요.
 - OBJ 프로젝트에는 원본 모델을 넣지 않아요. 복원 시 기존 모델을 찾거나 새 폴더로 연결해야 해요.

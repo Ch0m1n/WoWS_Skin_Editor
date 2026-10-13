@@ -3,7 +3,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
 import {MTLLoader} from 'three/addons/loaders/MTLLoader.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {canvas, uid, initializeDocument, newPaint, newImage, composite, serializeLayer, serializeLayerAsync, cloneLayers, restoreLayers, imageFromURL} from './document.js';
+import {canvas, uid, initializeDocument, newPaint, newImage, composite, serializeLayer, serializeLayerAsync, cloneLayers, restoreLayers, imageFromURL, MAX_LAYERS, MAX_SCALE, MAX_PROJECT_BYTES, validateLayer, validateLayers} from './document.js';
 import {bakeProjection, resetProjectionBaker} from './projection-baker.js';
 import {createSurfaceBrush} from './surface-brush.js';
 import {ShipLibrary} from './ship-library.js';
@@ -16,6 +16,7 @@ import {setupWorkshopTools} from './workshop-tools.js';
 import {setupPartMask} from './part-mask.js';
 import {initI18n, t, language, showFirstLanguageChoice} from './i18n.js';
 import {setupErrorLog} from './error-log.js';
+import {sourceMap,uvAttribute,vertexUV,hitUV} from './texture-uv.js';
 import {parseCamouflageXML as parseXML, serializeCamouflageXML, MAX_CAMOUFLAGE_XML_BYTES} from './camouflage-xml.js';
 
 const $ = id => document.getElementById(id);
@@ -74,7 +75,7 @@ new ResizeObserver(resize).observe($('scene-wrap'));
 new ResizeObserver(fitTexture).observe($('texture-scroll'));
 const gpuNotice=document.createElement('div');gpuNotice.className='gpu-notice';gpuNotice.hidden=!renderer.isFallback;gpuNotice.textContent=t('gpuUnavailable');$('scene-wrap').append(gpuNotice);
 renderer.domElement.addEventListener('webglcontextlost',event=>{event.preventDefault();gpuNotice.hidden=false;gpuNotice.textContent=t('gpuLost');});
-renderer.domElement.addEventListener('webglcontextrestored',()=>{gpuNotice.hidden=true;for(const doc of state.docs.values()){if(doc.texture)doc.texture.needsUpdate=true;for(const material of doc.materials)material.needsUpdate=true;}invalidate();});
+renderer.domElement.addEventListener('webglcontextrestored',()=>{gpuNotice.hidden=true;for(const doc of state.docs.values()){for(const texture of doc.textures||[])texture.needsUpdate=true;for(const material of doc.materials)material.needsUpdate=true;}invalidate();});
 function animate() { requestAnimationFrame(animate); controls.update(); if (renderNeeded) { renderer.render(scene, camera); renderNeeded = false; drawGizmo(); drawImageHandles(); } }
 camera.position.set(20, 12, 20); controls.target.set(0, 1, 0); animate();
 function drawGizmo() {
@@ -191,6 +192,10 @@ async function installModel(object, source, savedDocuments = []) {
     }
   });
   if (!meshes.length) throw Error('표시할 메시가 없는 모델이에요.');
+  if(source.format.startsWith('glb'))for(const mesh of meshes)for(const material of [].concat(mesh.material)){
+    const map=material.map;if(!map)continue;const attribute=uvAttribute(mesh,material);if(!attribute){disposeModel(object);throw Error(t('unsupportedTextureUV'));}
+    for(let i=0;i<attribute.count;i++){const uv=vertexUV(mesh,material,i);if((map.wrapS!==THREE.RepeatWrapping&&(uv.x<0||uv.x>1))||(map.wrapT!==THREE.RepeatWrapping&&(uv.y<0||uv.y>1))){disposeModel(object);throw Error(t('unsupportedTextureUV'));}}
+  }
   for (const mesh of meshes) for (const m of [].concat(mesh.material)) docs.get(materialDocuments.get(m))?.meshes.add(mesh);
   for (const saved of savedDocuments) {
     const doc = docs.get(saved.key) || [...docs.values()].find(d => d.name === saved.name||d.target===saved.target);
@@ -203,11 +208,15 @@ async function installModel(object, source, savedDocuments = []) {
     }
     for (const row of saved.layers) if (row.raster && (row.raster.width !== saved.width || row.raster.height !== saved.height)) { disposeModel(object); throw Error('페인트 레이어 크기가 원본과 달라요.'); }
     doc.layers = saved.layers; doc.target = saved.target;
+    doc.layers.forEach(rememberProjection);
+    if(saved.recover){const output=composite(doc),flat=newPaint(doc,t('recoveredLayer'));flat.blend='copy';flat.raster.getContext('2d').drawImage(output,0,0);doc.layers=[flat];}
   }
+  const first = [...docs.values()].find(doc => /(?:ship|Hull|JSC.*_1944_albedo)/i.test(doc.name)) || docs.values().next().value;
+  try{for(const doc of docs.values())if(doc.image){const w=doc.image.naturalWidth||doc.image.width,h=doc.image.naturalHeight||doc.image.height;if(w>4096||h>4096)throw Error(t('textureTooLarge'));}initializeDocument(first);first.preview=canvas(1,1);}catch(error){disposeModel(object);for(const doc of docs.values())for(const c of [doc.base,doc.composite,doc.preview])if(c)c.width=c.height=0;throw error;}
   // Swap only after geometry and texture discovery have succeeded.
   try{await accelerateMeshes(meshes);}catch{message(t('workerFallback'));}
   if (model) { scene.remove(model); disposeModel(model); }
-  for (const doc of state.docs.values()){doc.texture?.dispose();doc.patchTexture?.dispose();}
+    for (const doc of state.docs.values()){for(const texture of doc.textures||[doc.texture])texture?.dispose();doc.patchTexture?.dispose();}
   model = object; scene.add(model); model.updateMatrixWorld(true);
   Object.assign(state, {source, docs, meshes, activeDoc: null, activeLayer: null, selectedMesh: null, undo: [], redo: [], dirty: false, xml: null, xmlDirty: false,xmlLabels:{}});
   for (const [m, key] of originals) { m.userData.docKey = key; m.userData.originalMap = m.map; }
@@ -222,7 +231,6 @@ async function installModel(object, source, savedDocuments = []) {
   $('texture-select').replaceChildren(...[...docs.values()].map(doc => { const o = new Option(doc.name, doc.key); return o; }));
   renderParts();
   // Prefer the hull's albedo for the first editing surface.
-  const first = [...docs.values()].find(doc => /(?:ship|Hull|JSC.*_1944_albedo)/i.test(doc.name)) || docs.values().next().value;
   selectDoc(first.key); renderMaterials(); focusView(); resize();
   invalidate(); message(t('modelOpened',{name:source.name}));
 }
@@ -316,25 +324,22 @@ function drawNow(doc = current()) {
   const region=doc.fullDraw?null:doc.dirtyRegion;
   const c = composite(doc, $('compare').checked,region);doc.fullDraw=false;doc.dirtyRegion=null;
   if (!doc.texture) {
-    doc.preview = canvas(1,1); doc.texture = new THREE.CanvasTexture(doc.preview); doc.texture.colorSpace = THREE.SRGBColorSpace; doc.texture.flipY = doc.flipY;
-    const original = doc.materials[0].userData.originalMap;
-    if (original) { doc.texture.wrapS = original.wrapS; doc.texture.wrapT = original.wrapT; doc.texture.repeat.copy(original.repeat); doc.texture.offset.copy(original.offset); }
-    doc.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); doc.texture.generateMipmaps = false; doc.texture.minFilter = THREE.LinearFilter;
-    for (const m of doc.materials) { m.map = doc.texture; m.needsUpdate = true; }
+    doc.preview ||= canvas(1,1);const shared=new THREE.Source(doc.preview);
+    doc.textures=doc.materials.map(m=>{const original=m.userData.originalMap,texture=original?original.clone():new THREE.CanvasTexture(doc.preview);texture.source=shared;texture.colorSpace=THREE.SRGBColorSpace;texture.flipY=original?.flipY??doc.flipY;texture.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());texture.generateMipmaps=false;texture.minFilter=THREE.LinearFilter;m.map=texture;m.needsUpdate=true;return texture;});doc.texture=doc.textures[0];
   }
   const limit = Math.min(Number($('preview-quality').value),renderer.capabilities.maxTextureSize||4096), ratio = Math.min(1, limit / Math.max(c.width,c.height));
   const w=Math.round(c.width*ratio), h=Math.round(c.height*ratio);
   const resized=doc.preview.width!==w||doc.preview.height!==h;
-  if (resized) {doc.texture.dispose();doc.preview.width=w;doc.preview.height=h;}
+  if (resized) {for(const texture of doc.textures)texture.dispose();doc.preview.width=w;doc.preview.height=h;}
   const previewContext=doc.preview.getContext('2d');previewContext.save();if(region&&!resized){previewContext.beginPath();previewContext.rect(Math.floor(region.x*ratio)-1,Math.floor(region.y*ratio)-1,Math.ceil(region.w*ratio)+2,Math.ceil(region.h*ratio)+2);previewContext.clip();}previewContext.clearRect(0,0,w,h);previewContext.drawImage(c,0,0,w,h);previewContext.restore();
   if(region&&!resized){
     const x=Math.max(0,Math.floor(region.x*ratio)-1),y=Math.max(0,Math.floor(region.y*ratio)-1),right=Math.min(w,Math.ceil((region.x+region.w)*ratio)+1),bottom=Math.min(h,Math.ceil((region.y+region.h)*ratio)+1);
     if(right>x&&bottom>y){
       if(!doc.patch){doc.patch=canvas(1,1);doc.patchTexture=new THREE.CanvasTexture(doc.patch);doc.patchTexture.colorSpace=THREE.SRGBColorSpace;}
       doc.patch.width=right-x;doc.patch.height=bottom-y;doc.patch.getContext('2d').drawImage(doc.preview,x,y,right-x,bottom-y,0,0,right-x,bottom-y);
-      renderer.copyTextureToTexture(doc.patchTexture,doc.texture,null,new THREE.Vector2(x,doc.flipY?h-bottom:y));
+      for(const texture of doc.textures)renderer.copyTextureToTexture(doc.patchTexture,texture,null,new THREE.Vector2(x,texture.flipY?h-bottom:y));
     }
-  }else doc.texture.needsUpdate = true;
+  }else for(const texture of doc.textures)texture.needsUpdate = true;
   invalidate();
   if (state.channel !== 'albedo' && doc.key === state.activeDoc) return;
   if (doc.key === state.activeDoc) {
@@ -350,13 +355,13 @@ function drawUV() {
   const meshes = state.selectedMesh && doc.meshes.has(state.selectedMesh) ? [state.selectedMesh] : [...doc.meshes];
   let triangles = 0;
   for (const mesh of meshes) {
-    const g = mesh.geometry, uv = g.attributes.uv; if (!uv) continue; const idx = g.index;
-    const mats = [].concat(mesh.material); const count = idx ? idx.count : uv.count;
+    const g = mesh.geometry; const idx = g.index;
+    const mats = [].concat(mesh.material); const count = idx ? idx.count : g.attributes.position.count;
     for (let n = 0; n < count; n += 3) {
       const group = g.groups.find(group => n >= group.start && n < group.start + group.count);
       if (group && mats[group.materialIndex]?.userData.docKey !== doc.key) continue;
       if (++triangles > 70000) break;
-      ctx.beginPath(); for (let j = 0; j < 3; j++) { const id = idx ? idx.getX(n + j) : n + j; ctx[j ? 'lineTo' : 'moveTo'](uv.getX(id) * output.width, (doc.flipY ? 1 - uv.getY(id) : uv.getY(id)) * output.height); } ctx.closePath(); ctx.stroke();
+      const material=mats[group?.materialIndex||0];if(!uvAttribute(mesh,material))continue;ctx.beginPath(); for (let j = 0; j < 3; j++) { const id = idx ? idx.getX(n + j) : n + j,p=vertexUV(mesh,material,id);ctx[j ? 'lineTo' : 'moveTo'](p.x * output.width, (doc.flipY ? 1 - p.y : p.y) * output.height); } ctx.closePath(); ctx.stroke();
     }
   }
 }
@@ -479,11 +484,13 @@ function endGesture() { straightAngle.hidden=true;if (stroke || imageDrag) { str
 $('texture-canvas').addEventListener('pointerup', endGesture); $('texture-canvas').addEventListener('pointercancel', endGesture);
 function pick(event) {
   const rect = renderer.domElement.getBoundingClientRect(); mouse.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-  raycaster.firstHitOnly=true;raycaster.setFromCamera(mouse, camera); return raycaster.intersectObjects(state.meshes.filter(m => m.visible), false)[0];
+  raycaster.firstHitOnly=true;raycaster.setFromCamera(mouse, camera);const hit=raycaster.intersectObjects(state.meshes.filter(m => m.visible), false)[0];if(hit?.face)hit.uv=hitUV(hit);return hit;
 }
 let projectionDrag=null, projectionPreview=null;
 imageHandles=document.createElementNS('http://www.w3.org/2000/svg','svg');imageHandles.id='image-handles';imageHandles.setAttribute('aria-label',t('imageTransformHandles'));$('scene-wrap').append(imageHandles);
-const projectionVersions=new WeakMap(), pendingProjections=new Set();
+const projectionVersions=new WeakMap(), pendingProjections=new Set(), projectionStates=new WeakMap();
+function projectionSnapshot(row){return {x:row.x,y:row.y,scale:row.scale,rotation:row.rotation,flip:row.flip,flipYImage:row.flipYImage,projection:structuredClone(row.projection),raster:row.raster};}
+function rememberProjection(row){if(row.projection&&!projectionStates.has(row))projectionStates.set(row,projectionSnapshot(row));}
 function surfaceUp(hit,old){
   const normal=hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
   const up=old?new THREE.Vector3().fromArray(old.cameraUp).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3().fromArray(old.normal),normal)):new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
@@ -543,9 +550,9 @@ function updateProjectedLayer(row,doc=current()) {
   message(t('updatingImageLayer'));
   const task=bakeProjection(row.image,meshes,doc,projectionOptions(row,doc)).then(({bitmap,count})=>{
     try{if(projectionVersions.get(row)!==version||!doc.layers.includes(row))return;if(!count)throw Error(t('projectionEmpty'));
-      row.raster=canvas(doc.base.width,doc.base.height);row.raster.getContext('2d').drawImage(bitmap,0,0);draw(doc);if(current()===doc)renderLayers();markDirty();message(t('imageLayerReady'));
+      const raster=canvas(doc.base.width,doc.base.height);raster.getContext('2d').drawImage(bitmap,0,0);row.raster=raster;projectionStates.set(row,projectionSnapshot(row));draw(doc);if(current()===doc){renderLayers();syncProperties();}markDirty();message(t('imageLayerReady'));
     }finally{bitmap.close();}
-  }).catch(report).finally(()=>pendingProjections.delete(task));pendingProjections.add(task);return task;
+  }).catch(error=>{if(projectionVersions.get(row)===version){const previous=projectionStates.get(row);if(previous)Object.assign(row,previous,{projection:structuredClone(previous.projection)});else doc.layers=doc.layers.filter(r=>r!==row);draw(doc);if(current()===doc){renderLayers();syncProperties();}report(error);}throw error;}).finally(()=>pendingProjections.delete(task));pendingProjections.add(task);task.catch(()=>{});return task;
 }
 function beginImageMove(hit,event){
   if(layer()?.locked&&!state.image)return;
@@ -555,6 +562,8 @@ function beginImageMove(hit,event){
   let row=layer();if(!row||row.kind!=='image'||row.image!==image)row=null;
   if(row&&key!==state.activeDoc)throw Error(t('imageSameTexture'));
   if(key!==state.activeDoc)selectMesh(hit.object,hit.face.materialIndex);
+  if(!row&&current().layers.length>=MAX_LAYERS)throw Error(t('layerLimit'));
+  if(row)rememberProjection(row);
   const candidate={...(row||newImage(current(),image,state.imageName)),x:.5,y:.5,scale:row?.projection?row.scale:Number($('stamp-size').value)/100,rotation:row?.projection?row.rotation:Number($('stamp-rotation').value),projection:{origin:hit.point.toArray(),...surfaceUp(hit,row?.projection),meshName:hit.object.name,scope:row?.projection?.scope||$('stamp-scope').value,maxAngle:row?.projection?.maxAngle??Number($('stamp-angle').value),depth:row?.projection?.depth??Number($('stamp-depth').value)/100,mirror:row?.projection?.mirror??$('stamp-mirror').checked}};
   projectionDrag={row,candidate,doc:current(),pointerId:event.pointerId,visible:row?.visible,startClient:{x:event.clientX,y:event.clientY},moved:!row};
   if(!row)previewProjection(candidate,current());renderer.domElement.setPointerCapture(event.pointerId);
@@ -571,8 +580,11 @@ function finishImageMove(cancel=false){
   if(row)row.visible=visible;
   if(row&&!moved&&!mode){invalidate();return;}
   if(cancel){draw(doc);return;}
-  checkpoint();candidate.visible=true;
+  candidate.visible=true;validateLayer(candidate);
   const peers=row?doc.layers.filter(r=>r.kind==='image'&&!r.locked&&r.id!==row.id&&state.selectedLayers?.has(r.id)):[];
+  peers.forEach(peer=>validateLayer({...peer,scale:peer.scale*candidate.scale/row.scale}));
+  if(!row&&doc.layers.length>=MAX_LAYERS)throw Error(t('layerLimit'));
+  checkpoint();peers.forEach(rememberProjection);if(row)rememberProjection(row);
   for(const peer of peers){const scaleRatio=candidate.scale/row.scale,rotationDelta=candidate.rotation-row.rotation;peer.scale*=scaleRatio;peer.rotation+=rotationDelta;
     if(peer.projection){const oldPoint=new THREE.Vector3().fromArray(projectionOptions(peer,doc).point),pivot=new THREE.Vector3().fromArray(projectionOptions(row,doc).point),target=new THREE.Vector3().fromArray(projectionOptions(candidate,doc).point);oldPoint.sub(pivot).applyAxisAngle(new THREE.Vector3().fromArray(row.projection.normal),rotationDelta*Math.PI/180).multiplyScalar(scaleRatio).add(target);peer.x=peer.y=.5;peer.projection={...peer.projection,origin:oldPoint.toArray()};updateProjectedLayer(peer,doc);}}
   let target=row;if(row)Object.assign(row,candidate);else{target=candidate;target.raster=canvas(doc.base.width,doc.base.height);doc.layers.push(target);}
@@ -632,19 +644,22 @@ function projectData() {
     documents: [...state.docs.values()].filter(doc => doc.layers.length).map(doc => ({key: doc.key, name: doc.name, width: doc.base.width, height: doc.base.height, target: doc.target, layers: doc.layers.map(serializeLayer)})),
     hiddenParts: state.meshes.filter(m => !m.visible).map(m => m.name), xml: state.xml ? serializeCamouflageXML(state.xml) : null, xmlName: state.xmlName, xmlDirty: state.xmlDirty, xmlLabels:state.xmlLabels,xmlLabelLanguage:language};
 }
-async function projectDataAsync(){
+async function projectDataAsync(expectedSource=state.source){
   await Promise.all([...pendingProjections]);
+  if(state.source!==expectedSource)throw Error(t('modelChangedDuringSave'));
   // Freeze editable raster buffers before asynchronous PNG encoding.
   const result={schema:'wows-skin-workshop/v1',source:state.source,activeDoc:state.activeDoc,documents:[],hiddenParts:state.meshes.filter(m=>!m.visible).map(m=>m.name),xml:state.xml?serializeCamouflageXML(state.xml):null,xmlName:state.xmlName,xmlDirty:state.xmlDirty,xmlLabels:state.xmlLabels,xmlLabelLanguage:language};
-  const docs=[...state.docs.values()].filter(d=>d.layers.length).map(d=>({key:d.key,name:d.name,width:d.base.width,height:d.base.height,target:d.target,layers:d.layers.map(row=>({...row}))}));
-  for(const doc of docs){doc.layers=await Promise.all(doc.layers.map(serializeLayerAsync));result.documents.push(doc);}return result;
+  const docs=[...state.docs.values()].filter(d=>d.layers.length).map(d=>{validateLayers(d.layers);return {key:d.key,name:d.name,width:d.base.width,height:d.base.height,target:d.target,layers:cloneLayers(d.layers).map(row=>({...row,projection:row.projection?structuredClone(row.projection):undefined}))};});
+  for(const doc of docs){doc.layers=await Promise.all(doc.layers.map(serializeLayerAsync));result.documents.push(doc);}if(new Blob([JSON.stringify(result)]).size>MAX_PROJECT_BYTES)throw Error(t('projectTooLarge'));return result;
 }
 async function openProject(value) {
   if (value.schema !== 'wows-skin-workshop/v1' || !value.source || !Array.isArray(value.documents) || value.documents.length > 64) throw Error('지원하지 않는 프로젝트예요.');
   if (state.dirty && !confirm('현재 작업을 저장하지 않고 프로젝트를 열까요?')) return;
   // Validate images before replacing the current model.
   const prepared = [];
-  for (const doc of value.documents) { const layers = await restoreLayers(doc.layers); prepared.push({...doc, layers}); }
+  let recover=false;
+  for (const doc of value.documents) {const invalid=doc.layers?.length>MAX_LAYERS||doc.layers?.some(row=>row.kind==='image'&&row.scale>MAX_SCALE);const layers = await restoreLayers(doc.layers,{recover:invalid});recover||=invalid;prepared.push({...doc,layers,recover:invalid});}
+  if(recover&&!confirm(t('recoverLegacyProject')))return;
   let xml = null; if (value.xml) xml = parseXML(value.xml);
   busy(true, '프로젝트를 복원하는 중이에요.');
   try {
@@ -775,7 +790,7 @@ $('glb-file').onchange = action(async event => {
 });
 $('open-project').onclick = () => $('project-file').click();
 $('project-file').onchange = action(async event => { const file = event.target.files[0]; event.target.value = ''; if (!file) return; if (file.size > 96 * 1024 * 1024) throw Error('프로젝트는 96 MiB 이하로 선택하세요.'); await openProject(JSON.parse(await file.text())); });
-$('save-project').onclick = action(async () => { if (!state.source) throw Error('모델을 먼저 열어주세요.'); jsonDownload(await projectDataAsync(), state.source.name + '.wowskin'); state.dirty = false; $('save-state').textContent = '프로젝트 다운로드 요청됨'; message('프로젝트 저장을 요청했어요. 다운로드 완료를 확인하세요.'); });
+$('save-project').onclick = action(async () => { if (!state.source) throw Error('모델을 먼저 열어주세요.');const revision=state.revision,source=state.source,button=$('save-project');button.disabled=true;try{const value=await projectDataAsync(),blob=new Blob([JSON.stringify(value)],{type:'application/json'});if(blob.size>MAX_PROJECT_BYTES)throw Error(t('projectTooLarge'));download(blob,source.name+'.wowskin');if(state.source===source&&state.revision===revision){state.dirty=false;$('save-state').textContent=t('projectSaved');}else $('save-state').textContent=t('editedDuringSave');message(t('projectDownloadRequested'));}finally{button.disabled=false;} });
 $('export').onclick = action(showExport); $('download-export').onclick = action(exportWork);
 document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => button.closest('dialog').close());
 document.querySelectorAll('button[data-view]').forEach(button => button.onclick = () => { document.querySelector('.workspace').dataset.view = button.dataset.view; document.querySelectorAll('button[data-view]').forEach(b => b.classList.toggle('active', b === button)); resize(); });
@@ -793,7 +808,7 @@ $('duplicate-layer').onclick = action(async () => { await Promise.all([...pendin
 $('delete-layer').onclick = () => { if (!layer()) return;const ids=new Set(current().layers.filter(row=>!row.locked&&(row.id===state.activeLayer||state.selectedLayers?.has(row.id))).map(row=>row.id));if(!ids.size)return;checkpoint(); const doc = current(); doc.layers = doc.layers.filter(row => !ids.has(row.id));state.selectedLayers=new Set(); state.activeLayer = doc.layers.at(-1)?.id || null; changed(); };
 for (const [id, offset] of [['layer-up', 1], ['layer-down', -1]]) $(id).onclick = () => { if (!layer()) return; const rows = current().layers, i = rows.indexOf(layer()), j = i + offset; if (j < 0 || j >= rows.length) return; checkpoint(); [rows[i], rows[j]] = [rows[j], rows[i]]; changed(); };
 for (const [id, key, convert] of [['layer-name', 'name', v => v.slice(0, 100)], ['blend', 'blend', v => v], ['opacity', 'opacity', v => Number(v) / 100], ['layer-x', 'x', v => Number(v) / 100], ['layer-y', 'y', v => Number(v) / 100], ['layer-scale', 'scale', v => Number(v) / 100], ['layer-rotation', 'rotation', Number]]) {
-  $(id).addEventListener('change', () => { if (!layer()||layer().locked) return; const value = convert($(id).value); if (typeof value === 'number' && !Number.isFinite(value)) return;const old=layer()[key],rows=current().layers.filter(r=>!r.locked&&(r.id===state.activeLayer||state.selectedLayers?.has(r.id)));checkpoint();for(const row of rows){row[key]=row.id===state.activeLayer?value:['x','y','rotation'].includes(key)?row[key]+value-old:key==='scale'?row.scale*value/old:value;if(row.projection&&['x','y','scale','rotation'].includes(key))updateProjectedLayer(row);}changed(); });
+  $(id).addEventListener('change', action(() => { if (!layer()||layer().locked) return; const value = convert($(id).value); if (typeof value === 'number' && !Number.isFinite(value)) return;const old=layer()[key],rows=current().layers.filter(r=>!r.locked&&(r.id===state.activeLayer||state.selectedLayers?.has(r.id)));const changes=rows.map(row=>({...row,[key]:row.id===state.activeLayer?value:['x','y','rotation'].includes(key)?row[key]+value-old:key==='scale'?row.scale*value/old:value}));changes.forEach(validateLayer);checkpoint();for(let i=0;i<rows.length;i++){const row=rows[i];rememberProjection(row);row[key]=changes[i][key];if(row.projection&&['x','y','scale','rotation'].includes(key))updateProjectedLayer(row);}changed(); }));
 }
 $('flip').onchange = () => { if (!layer()) return; checkpoint(); layer().flip = $('flip').checked; changed();if(layer().projection)updateProjectedLayer(layer()); };
 $('undo').onclick = action(() => history('undo', 'redo')); $('redo').onclick = action(() => history('redo', 'undo'));

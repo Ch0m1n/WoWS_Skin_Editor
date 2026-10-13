@@ -1,18 +1,20 @@
 import * as THREE from 'three';
 import {canvas} from './document.js';
 import {paintStroke} from './brush.js';
+import {uvAttribute,vertexUV} from './texture-uv.js';
 
 // Paint the same camera-space footprint onto each visible triangle. UV islands
 // remain separate; a steep step receives the projection, rather than a UV circle.
 export function createSurfaceBrush({camera,renderer,pick,commit}) {
-  const scratch=canvas(1,1),visible=new WeakMap();
+  const scratch=canvas(1,1);
   let gesture=null;
   const project=(p,mesh,rect)=>{const v=p.clone().applyMatrix4(mesh.matrixWorld).project(camera);return{x:rect.left+(v.x+1)*rect.width/2,y:rect.top+(1-v.y)*rect.height/2,z:v.z};};
   function triangle(mesh,index,doc,rect){
     const g=mesh.geometry,ids=[0,1,2].map(n=>g.index?g.index.getX(index*3+n):index*3+n);
     const world=ids.map(i=>new THREE.Vector3().fromBufferAttribute(g.attributes.position,i));
     const screen=world.map(p=>project(p,mesh,rect));
-    const uv=ids.map(i=>({x:g.attributes.uv.getX(i)*doc.base.width,y:(doc.flipY?1-g.attributes.uv.getY(i):g.attributes.uv.getY(i))*doc.base.height}));
+    const group=g.groups.find(group=>index*3>=group.start&&index*3<group.start+group.count),material=[].concat(mesh.material)[group?.materialIndex||0];if(!uvAttribute(mesh,material))return null;
+    const uv=ids.map(i=>{const p=vertexUV(mesh,material,i);return {x:p.x*doc.base.width,y:(doc.flipY?1-p.y:p.y)*doc.base.height};});
     const a=screen[0],b=screen[1],c=screen[2],det=(b.x-a.x)*(c.y-a.y)-(c.x-a.x)*(b.y-a.y);
     if(Math.abs(det)<1e-7||screen.some(p=>p.z<-1||p.z>1))return null;
     const dx1=b.x-a.x,dy1=b.y-a.y,dx2=c.x-a.x,dy2=c.y-a.y;
@@ -34,21 +36,15 @@ export function createSurfaceBrush({camera,renderer,pick,commit}) {
     const top=1-(bounds.top-rect.top)/rect.height*2,bottom=1-(bounds.bottom-rect.top)/rect.height*2;
     const crop=new THREE.Matrix4().set(2/(right-left),0,0,-(right+left)/(right-left),0,2/(top-bottom),0,-(top+bottom)/(top-bottom),0,0,1,0,0,0,0,1);
     for(const mesh of doc.meshes){
-      if(!mesh.visible||!mesh.geometry.attributes.uv)continue;
+      if(!mesh.visible)continue;
       const g=mesh.geometry,matrix=crop.clone().multiply(camera.projectionMatrix).multiply(camera.matrixWorldInverse).multiply(mesh.matrixWorld);
       const frustum=new THREE.Frustum().setFromProjectionMatrix(matrix);
-      let cache=visible.get(mesh);if(cache?.gesture!==gesture){cache={gesture,faces:new Map()};visible.set(mesh,cache);}
+      const samples=new Map();
       const visit=index=>{
         const group=g.groups.find(group=>index*3>=group.start&&index*3<group.start+group.count),mat=[].concat(mesh.material)[group?.materialIndex||0];
         if(mat?.userData.docKey!==doc.key)return;
         const tri=triangle(mesh,index,doc,rect);if(!tri)return;
         if(Math.max(...tri.screen.map(p=>p.x))<bounds.left||Math.min(...tri.screen.map(p=>p.x))>bounds.right||Math.max(...tri.screen.map(p=>p.y))<bounds.top||Math.min(...tri.screen.map(p=>p.y))>bounds.bottom)return;
-        if(!cache.faces.has(index)){
-          const center=tri.world.reduce((v,p)=>v.add(p),new THREE.Vector3()).multiplyScalar(1/3).applyMatrix4(mesh.matrixWorld);
-          const s=center.clone().project(camera),hit=pick({clientX:rect.left+(s.x+1)*rect.width/2,clientY:rect.top+(1-s.y)*rect.height/2});
-          cache.faces.set(index,!!hit&&hit.point.distanceTo(center)<Math.max(1e-5,center.distanceTo(camera.position)*1e-5));
-        }
-        if(!cache.faces.get(index))return;
         const corners=[[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.right,bounds.bottom],[bounds.left,bounds.bottom]].map(([x,y])=>({x:tri.A*x+tri.C*y+tri.E,y:tri.B*x+tri.D*y+tri.F}));
         // Split wrapped triangles into texture tiles instead of bridging their UVs.
         const minTileX=Math.floor(Math.min(...tri.uv.map(p=>p.x))/doc.base.width),maxTileX=Math.ceil(Math.max(...tri.uv.map(p=>p.x))/doc.base.width)-1;
@@ -65,6 +61,16 @@ export function createSurfaceBrush({camera,renderer,pick,commit}) {
           ctx.beginPath();tri.uv.forEach((p,i)=>{const dx=p.x-center.x,dy=p.y-center.y,n=Math.hypot(dx,dy)||1;ctx[i?'lineTo':'moveTo'](p.x+dx/n*.75-ox-x,p.y+dy/n*.75-oy-y);});ctx.closePath();ctx.clip();
           ctx.setTransform(tri.A,tri.B,tri.C,tri.D,tri.E-ox-x,tri.F-oy-y);
           paintStroke(ctx,end.x,end.y,start,{...options,size:gesture.size,erase:false});ctx.setTransform(1,0,0,1,0,0);
+          // Test the covered screen samples, rather than the triangle centroid.
+          const pixels=ctx.getImageData(0,0,scratch.width,scratch.height),det=tri.A*tri.D-tri.B*tri.C;
+          for(let py=0;py<scratch.height;py++)for(let px=0;px<scratch.width;px++){
+            const alpha=(py*scratch.width+px)*4+3;if(!pixels.data[alpha])continue;
+            const u=px+.5+ox+x-tri.E,v=py+.5+oy+y-tri.F,sx=(tri.D*u-tri.C*v)/det,sy=(tri.A*v-tri.B*u)/det;
+            const sampleX=Math.round(sx),sampleY=Math.round(sy),key=sampleX+':'+sampleY;
+            if(!samples.has(key))samples.set(key,pick({clientX:sampleX,clientY:sampleY}));
+            const hit=samples.get(key);if(!hit||hit.object!==mesh||hit.faceIndex!==index)pixels.data[alpha]=0;
+          }
+          ctx.putImageData(pixels,0,0);
           commit(row,scratch,{x,y,w:right-x,h:bottom-y},options.erase);
         }
       };

@@ -2,13 +2,13 @@ import * as THREE from './vendor/three/build/three.module.js';
 
 // Bake a planar image into the hit mesh's original UVs. No added overlay geometry:
 // the preview and exported texture use the same pixels.
-export function projectImage({mesh, materialIndex, image, context, point, normal, width, rotation, cameraUp, maxAngle = 75, depth = .35, flipY = true}) {
+export function projectImage({mesh, materialIndex, image, context, point, normal, width, rotation, cameraUp, maxAngle = 75, depth = .35, flipY = true,uvChannel=0,uvMatrix}) {
   const up = cameraUp.clone().addScaledVector(normal, -cameraUp.dot(normal)).normalize();
   if (up.lengthSq() < .1) up.set(0, 0, 1).addScaledVector(normal, -normal.z).normalize();
   const right = new THREE.Vector3().crossVectors(up, normal).normalize();
   up.applyAxisAngle(normal, rotation); right.applyAxisAngle(normal, rotation);
   const height = width * image.height / image.width;
-  const g = mesh.geometry, pos = g.attributes.position, uv = g.attributes.uv;
+  const g = mesh.geometry, pos = g.attributes.position, uv = g.attributes[uvChannel?'uv'+uvChannel:'uv'];
   if (!uv) throw Error('이 부품에는 UV 좌표가 없어요.');
   mesh.updateWorldMatrix(true, false);
   const idx = g.index, count = idx ? idx.count : pos.count;
@@ -29,9 +29,10 @@ export function projectImage({mesh, materialIndex, image, context, point, normal
       return [(delta.dot(right) / width + .5) * image.width, (.5 - delta.dot(up) / height) * image.height, delta.dot(normal)];
     });
     // Keep the projection near the hit surface, not distant parallel parts.
-    if (projected.every(v => Math.abs(v[2]) > width * depth)) continue;
+    if (projected.every(v => v[2] > width * depth)||projected.every(v => v[2] < -width * depth)) continue;
     if ([0, 1].some(axis => projected.every(v => v[axis] < 0) || projected.every(v => v[axis] > (axis ? image.height : image.width)))) continue;
-    const target = ids.map(i => [uv.getX(i) * tw, (flipY ? 1 - uv.getY(i) : uv.getY(i)) * th]);
+    const matrix=uvMatrix?new THREE.Matrix3().fromArray(uvMatrix):null;
+    const target = ids.map(i => {const p=new THREE.Vector2().fromBufferAttribute(uv,i);if(matrix)p.applyMatrix3(matrix);return [p.x*tw,(flipY?1-p.y:p.y)*th];});
     const [s, t, u] = projected, [p, q, r] = target;
     const dx1 = t[0] - s[0], dy1 = t[1] - s[1], dx2 = u[0] - s[0], dy2 = u[1] - s[1];
     const det = dx1 * dy2 - dx2 * dy1;
