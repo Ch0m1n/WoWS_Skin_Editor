@@ -38,7 +38,9 @@ export function setupErrorLog() {
   document.addEventListener('close',event=>{if(event.target.contains(panel)){open(false);document.body.append(panel);}if(event.target.contains(notice))document.body.append(notice);},true);
   updateButton();render();
   return {add(error){
-    const raw=error?.message||String(error),original=error?.stack||raw,description=errorDescription(raw),now=Date.now(),previous=entries.at(-1);
+    const raw=error?.message||String(error),source=error?.stack||raw,description=errorDescription(raw);
+    // Localize the error sentence; keep stack locations and file paths intact.
+    const original=source.replace(raw,description),now=Date.now(),previous=entries.at(-1);
     if(previous&&previous.original===original&&now-previous.time<2000){previous.count++;previous.time=now;}else{entries.push({time:now,description,original,count:1});if(entries.length>100)entries.shift();}
     if(panel.hidden){unread=Math.min(100,unread+1);document.getElementById('error-notice-text').textContent=description;(document.querySelector('dialog[open]')||document.body).append(notice);notice.hidden=false;clearTimeout(timer);timer=setTimeout(()=>{notice.hidden=true;},10000);}else render();
     updateButton();return description;

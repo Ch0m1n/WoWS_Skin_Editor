@@ -21,8 +21,9 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
   await page.route('**/api/game-folder',r=>r.fulfill({status:400,json:{error:'모델 폴더를 찾을 수 없어요.'}}));
   await page.locator('#game-folder').fill('missing');await page.locator('#set-game-folder').click();await page.locator('#error-notice').waitFor({state:'visible'});
   assert.match(await page.locator('#error-notice-text').innerText(),language==='en'?/model folder could not be found/:/모델 폴더/);
-  await page.locator('#error-notice-open').click();await page.locator('#error-log-list summary').click();assert.match(await page.locator('#error-log-list pre').innerText(),/모델 폴더를 찾을 수 없어요/);
-  await page.context().grantPermissions(['clipboard-read','clipboard-write']);await page.locator('#error-log-list article > button').click();assert.match(await page.evaluate(()=>navigator.clipboard.readText()),/모델 폴더를 찾을 수 없어요/);
+  await page.locator('#error-notice-open').click();await page.locator('#error-log-list summary').click();assert.match(await page.locator('#error-log-list pre').innerText(),language==='en'?/model folder could not be found/:/모델 폴더를 찾을 수 없어요/);
+  if(language==='en')assert.doesNotMatch(await page.locator('#error-log-list').innerText(),/[가-힣]/);
+  await page.context().grantPermissions(['clipboard-read','clipboard-write']);await page.locator('#error-log-list article > button').click();assert.match(await page.evaluate(()=>navigator.clipboard.readText()),language==='en'?/model folder could not be found/:/모델 폴더를 찾을 수 없어요/);
   await page.screenshot({path:`tests/output/error-log-${language}.png`});
   await page.keyboard.press('Escape');assert(await page.locator('#model-dialog').isVisible());
   await page.evaluate(()=>document.getElementById('error-log-toggle').click());

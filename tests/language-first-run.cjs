@@ -12,6 +12,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
       await page.waitForFunction(value=>document.documentElement.lang===value&&!document.getElementById('language-dialog').open,language);
       assert.equal(await page.evaluate(()=>localStorage.getItem('workshop.language')),language);
       assert.equal(await page.locator('#open-model').textContent(),language==='en'?'Open ship':'모델 열기');
+      assert.equal(await page.locator('#ship-name').textContent(),language==='en'?'Choose a ship':'함선을 불러오세요');
       await page.reload();assert(await dialog.isHidden(),'Saved choice skips the chooser on the next visit');
       assert.equal(await page.locator('#ui-language').inputValue(),language);
       const other=language==='ko'?'en':'ko';await page.locator('#ui-language').selectOption(other);

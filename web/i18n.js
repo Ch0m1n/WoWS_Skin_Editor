@@ -3,7 +3,9 @@ export const language = localStorage.getItem('workshop.language') === 'en' ? 'en
 const messages = {
   errorLog:{ko:'오류 로그',en:'Error log'},
   errorLogEmpty:{ko:'기록된 오류가 없어요.',en:'No errors recorded.'},
-  errorOriginal:{ko:'원본 로그',en:'Original log'},
+  errorOriginal:{ko:'상세 로그',en:'Detailed log'},
+  '파일을 찾을 수 없어요.':{ko:'파일을 찾을 수 없어요.',en:'The requested file or API endpoint could not be found.'},
+  '함선을 불러오세요':{ko:'함선을 불러오세요',en:'Choose a ship'},
   errorCopy:{ko:'로그 복사',en:'Copy log'},errorCopied:{ko:'복사했어요',en:'Copied'},errorCopyFailed:{ko:'복사 실패 · 원본 로그를 선택해 복사하세요',en:'Copy failed · select and copy the original log'},
   errorNetwork:{ko:'서버에 연결하지 못했어요. 실행 창을 확인하고 다시 시도하세요.',en:'Could not connect to the server. Check that it is running and try again.'},
   errorBackup:{ko:'자동 복구 저장에 실패했어요. 프로젝트를 파일로 저장하고 원본 로그를 확인하세요.',en:'Automatic backup failed. Save your project to a file and check the original log.'},

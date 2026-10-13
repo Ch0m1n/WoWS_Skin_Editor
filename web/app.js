@@ -879,6 +879,7 @@ syncUndo(); syncProperties(); resize();
 window.workshop = {get state() { return state; }, get renderer() { return renderer; }, get camera() { return camera; }, get model() { return model; }, projectData};
 const restartBackup=localStorage.getItem('workshop.restartBackup');if(restartBackup){localStorage.removeItem('workshop.restartBackup');api('read-backup',{id:restartBackup}).then(r=>r.json()).then(openProject).catch(report);}
 initI18n();
+if(!state.source)$('ship-name').textContent=t('함선을 불러오세요');
 async function changeLanguage(next){if(!await saveDraft()){$('ui-language').value=language;throw Error(t('finishEditBeforeBackup'));}if(state.backupId)localStorage.setItem('workshop.restartBackup',state.backupId);localStorage.setItem('workshop.language',next);state.dirty=false;location.reload();}
 $('ui-language').onchange=action(()=>changeLanguage($('ui-language').value));
 showFirstLanguageChoice(changeLanguage);
