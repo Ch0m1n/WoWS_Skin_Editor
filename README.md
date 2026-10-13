@@ -26,8 +26,7 @@ Windows에서 [Start-Workshop.cmd](Start-Workshop.cmd)를 두 번 클릭하세�
 현재 PC에서는 Codex에 포함된 Python과 Pillow를 자동으로 찾아 사용해요.
 
 **포터블 배포본**은 릴리스의 `WoWS_Skin_Editor-v0.1-Windows.zip`을 풀고 그 안의
-`Start-Workshop.cmd`를 실행하세요. Python과 Pillow, 추출 엔진이 함께 들어 있어서
-설치된 월드오브워쉽 경로를 자동으로 탐지합니다.
+`Start-Workshop.cmd`를 실행하세요. 설치된 월드오브워쉽 경로를 자동으로 탐지합니다.
 인터넷 연결이나 에셋 다운로드는 사용하지 않아요.
 
 아래 명령은 소스 코드로 실행할 때만 필요해요. Python 3.10 이상을 사용하세요.
