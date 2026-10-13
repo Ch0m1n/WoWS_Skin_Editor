@@ -1,0 +1,134 @@
+--- a/src/export/gltf_export.rs
++++ b/src/export/gltf_export.rs
+@@ -102,6 +102,7 @@
+         lod_entry,
+         damaged,
+         None,
++        false,
+     )?;
+ 
+     if primitives.is_empty() {
+@@ -394,6 +395,7 @@
+             lod_entry,
+             false,
+             None,
++            true,
+         ) {
+             Ok(p) => p,
+             Err(e) => {
+@@ -1388,6 +1390,7 @@
+             lod_entry,
+             false,
+             None,
++            true,
+         ) {
+             Ok(p) => p,
+             Err(e) => {
+@@ -1768,6 +1771,7 @@
+     lod: &crate::models::visual::Lod,
+     damaged: bool,
+     barrel_pitch: Option<&BarrelPitch>,
++    has_external_transform: bool,
+ ) -> Result<Vec<DecodedPrimitive>, Report<ExportError>> {
+     let mut result = Vec::new();
+     let exclude = if damaged {
+@@ -1917,9 +1921,14 @@
+         // Unpack vertex attributes.
+         let mut verts = unpack_vertices(vert_slice, stride, &format);
+ 
+-        // Split visuals instance static meshes in node-local coordinates.
+-        // Skinned buffers already use the bind-pose space and must not receive
+-        // this rigid transform a second time.
++        // Unattached skinned hull sections need their bind-bone palette.
++        // Attached components are already placed through their hardpoint;
++        // applying the reflected bind palette again would flip their geometry.
++        if rs.skinned && !has_external_transform && let Some(db) = db {
++            apply_bind_pose(&mut verts.positions, &mut verts.normals, &mut indices,
++                vert_slice, stride, &format, visual, rs, &db.strings)?;
++        }
++        // Split static meshes use the single rigid instance transform instead.
+         if visual.split_layout && !rs.skinned && rs.node_name_ids.len() == 1
+             && let Some(db) = db
+             && let Some(name) = db.strings.get_string_by_id(rs.node_name_ids[0])
+@@ -1984,6 +1993,73 @@
+     for triangle in indices.chunks_exact_mut(3) {
+         triangle.swap(1, 2);
+     }
++}
++
++fn apply_bind_pose(positions: &mut [[f32;3]], normals: &mut [[f32;3]], indices: &mut [u32],
++    data: &[u8], stride: usize, format: &VertexFormat, visual: &VisualPrototype,
++    rs: &crate::models::visual::RenderSet, strings: &crate::models::assets_bin::StringsSection<'_>)
++    -> Result<(), Report<ExportError>> {
++    let Some(bones)=format.attributes.iter().find(|a|a.semantic==AttributeSemantic::BoneIndices) else {return Ok(());};
++    let weights=format.attributes.iter().find(|a|a.semantic==AttributeSemantic::BoneWeights);
++    let palette: Vec<_>=rs.node_name_ids.iter().map(|id|strings.get_string_by_id(*id)
++        .and_then(|name|visual.find_hardpoint_transform(name,strings)).map(negate_z_transform)).collect();
++    if palette.is_empty(){return Ok(());}
++    apply_bind_palette(positions,normals,indices,data,stride,bones.offset,weights.map(|a|a.offset),&palette)
++}
++
++fn apply_bind_palette(positions: &mut [[f32;3]], normals: &mut [[f32;3]], indices: &mut [u32],
++    data: &[u8], stride: usize, bone_offset: usize, weight_offset: Option<usize>, palette: &[Option<[f32;16]>])
++    -> Result<(), Report<ExportError>> {
++    let mut reflected=Vec::with_capacity(positions.len());
++    for i in 0..positions.len(){
++        let base=i*stride;
++        // D3DCOLOR stores weights in BGRA order: R and G are the two explicit
++        // weights; the third is implicit. Indices address float3 matrix rows,
++        // so the palette index is the stored register offset divided by three.
++        let w=weight_offset.map(|offset|{let r=data[base+offset+2] as f32/255.0;let g=data[base+offset+1] as f32/255.0;[r,g,(1.0-r-g).max(0.0)]}).unwrap_or([1.0,0.0,0.0]);
++        let sum=w.iter().sum::<f32>();let mut m=[0.0;16];
++        for j in 0..3{
++            if w[j]<1e-7{continue;}
++            let register=data[base+bone_offset+j] as usize;
++            let bone=if register%3==0{palette.get(register/3).and_then(|m|*m)}else{None};
++            let Some(bone)=bone else{return Err(Report::new(ExportError::VertexDecode("invalid bind bone palette index".into())));};
++            for k in 0..16{m[k]+=bone[k]*w[j]/sum;}
++        }
++        let det=m[0]*(m[5]*m[10]-m[9]*m[6])-m[4]*(m[1]*m[10]-m[9]*m[2])+m[8]*(m[1]*m[6]-m[5]*m[2]);
++        reflected.push(det<0.0);
++        let n=if i<normals.len(){&mut normals[i..i+1]}else{&mut []};
++        apply_rigid_instance(&mut positions[i..i+1],n,&mut [],m);
++    }
++    for triangle in indices.chunks_exact_mut(3){
++        if triangle.iter().filter(|&&i|reflected[i as usize]).count()>=2{triangle.swap(0,2);}
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod bind_pose_tests {
++    use super::*;
++    fn identity()->[f32;16]{[1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.]}
++    #[test]
++    fn reflected_bind_pose_moves_positions_and_preserves_front_faces(){
++        let mut m=identity();m[10]=-1.;m[14]=5.;
++        let mut positions=[[0.,0.,1.],[1.,0.,1.],[0.,1.,1.]];
++        let mut normals=[[0.,0.,1.];3];let mut indices=[0,1,2];
++        let data=[0,3,6,0,0,0,255,0].repeat(3);
++        apply_bind_palette(&mut positions,&mut normals,&mut indices,&data,8,0,Some(4),&[Some(m)]).unwrap();
++        assert_eq!(positions[0],[0.,0.,4.]);assert_eq!(normals[0],[0.,0.,-1.]);assert_eq!(indices,[2,1,0]);
++    }
++    #[test]
++    fn bgra_weights_and_register_indices_blend_two_bones(){
++        let a=identity();let mut b=identity();b[12]=10.;let mut positions=[[0.,0.,0.]];let mut normals=[[0.,1.,0.]];
++        apply_bind_palette(&mut positions,&mut normals,&mut [],&[0,3,6,0,0,127,128,0],8,0,Some(4),&[Some(a),Some(b)]).unwrap();
++        assert!((positions[0][0]-10.*127./255.).abs()<1e-5);assert_eq!(normals[0],[0.,1.,0.]);
++    }
++    #[test]
++    fn invalid_active_palette_register_is_rejected(){
++        assert!(apply_bind_palette(&mut [[0.,0.,0.]],&mut [],&mut [],&[2,0,0,0,0,0,255,0],8,0,Some(4),&[Some(identity())]).is_err());
++    }
++
+ }
+ 
+ fn apply_rigid_instance(positions: &mut [[f32;3]], normals: &mut [[f32;3]],
+@@ -3978,6 +4054,7 @@
+             lod_entry,
+             damaged,
+             sub.barrel_pitch.as_ref(),
++            sub.transform.is_some(),
+         )?;
+ 
+         if primitives.is_empty() {

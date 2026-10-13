@@ -125,7 +125,7 @@ Packaged SHA-256 values:
 
 ```text
 3466A3FDC6C7EEEE696F365806D968BD1B2D5867E8537DD73A2C2F5795411A65  Backend/ship_material_probe.exe
-5D465F21E8DDDD00605ABF1BF52B0C0AE5ABF0967144E22FE54C61F8CD82101F  Backend/wowsunpack.exe
+C572BC602929B5D3D908BD2949EA12FD955D052D78D325578C5DC2E45E33E22E  Backend/wowsunpack.exe
 5D465F21E8DDDD00605ABF1BF52B0C0AE5ABF0967144E22FE54C61F8CD82101F  Backend/wowsunpack_armor.exe
 ```
 
@@ -203,3 +203,15 @@ respective rights holders. Users must supply files from their own installation
 and follow the game's terms and applicable law. This notice is not legal advice.
 
 CPython, Pillow, UnityPy, and the listed codec dependencies are bundled under their licenses. PowerShell 5.1/7 is provided by Windows or the user. Blender is not required or invoked by WoWS Toolbox 5.0.61. The WebView2 bootstrapper is redistributed as described above; the WebView2 Runtime is supplied by Microsoft. Oodle runtimes are never redistributed and must come from the user's legally installed software.
+
+## Skin Editor bind-pose correction
+
+The model exporter applies the authored bind-bone palette to skinned hull sections
+without an external placement transform. Attached components retain their hardpoint
+placement to avoid applying reflected coordinate transforms twice. Bone register
+indices, BGRA weights, normal transforms and reflected winding are handled.
+
+The source change and three regression tests are retained in
+`engine/patches/skinned-hull-bind-pose.patch`, relative to the modified 0.23.0
+exporter described above. Build with `cargo build --release --bin wowsunpack`.
+The original packaged model exporter hash was `5D465F21E8DDDD00605ABF1BF52B0C0AE5ABF0967144E22FE54C61F8CD82101F`.

@@ -26,7 +26,7 @@ and its modified landaire/wowsunpack 0.23.0 model exporter. No installed Toolbox
 program is required at runtime. The copyright notice is reproduced in
 `engine/LICENSE-Toolbox`. Upstream executable hashes, codec notes and attribution
 are retained in `engine/UPSTREAM-NOTICES.md`. The included exporter SHA-256 is
-`5D465F21E8DDDD00605ABF1BF52B0C0AE5ABF0967144E22FE54C61F8CD82101F`.
+`C572BC602929B5D3D908BD2949EA12FD955D052D78D325578C5DC2E45E33E22E`.
 
 `OBJLoader.js` has one local modification: its Three.js import is relative so it
 also works inside a module worker, where document import maps are unavailable.
