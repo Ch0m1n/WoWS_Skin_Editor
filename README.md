@@ -1,0 +1,180 @@
+# WoWS Skin Editor v0.1
+
+설치된 월드 오브 워쉽에서 함선을 골라 3D로 보면서 텍스처를 편집하는 로컬 작업대예요.
+War Thunder Skin Editor의 작업 흐름을 참고해 독립적으로 만든 첫 버전이에요.
+
+[Windows 포터블 다운로드 / Download v0.1](https://github.com/Ch0m1n/WoWS_Skin_Editor/releases/tag/v0.1)
+
+## English quick start
+
+A local World of Warships PC skin editor with Korean and English UI. Download the
+Windows portable ZIP from Releases, extract it, and run `Start-Workshop.cmd`.
+Python, Pillow and the extraction engine are included; Toolbox and a pre-unpacked
+game folder are not required. An installed World of Warships PC client is required.
+Choose **English** in the language selector to use English UI and ship names from
+the game's English `global.mo`.
+
+Select a ship, paint in 2D or 3D, add and transform image layers, import existing
+PNG/DDS skins, save `.wowskin` projects, and export PNG/DDS textures. You can queue
+other ships for extraction while editing. PSD layers and in-game installation are
+not supported in v0.1. This is an unofficial community tool; game assets are not
+included. See [third-party notices](THIRD_PARTY_NOTICES.md) for bundled components.
+
+## 실행
+
+Windows에서 [Start-Workshop.cmd](Start-Workshop.cmd)를 두 번 클릭하세요.
+서버가 켜지고 기본 브라우저에서 <http://127.0.0.1:8766>이 열려요.
+현재 PC에서는 Codex에 포함된 Python과 Pillow를 자동으로 찾아 사용해요.
+
+**포터블 배포본**은 릴리스의 `WoWS_Skin_Editor-v0.1-Windows.zip`을 풀고 그 안의
+`Start-Workshop.cmd`를 실행하세요. Python과 Pillow, 추출 엔진이 함께 들어 있어서
+Toolbox·Python·PowerShell 설치나 사전 언팩 없이 사용할 수 있어요.
+게임 자체는 PC에 설치되어 있어야 해요. 인터넷 연결이나 에셋 다운로드는 사용하지 않아요.
+
+아래 명령은 소스 코드로 실행할 때만 필요해요. Python 3.10 이상을 사용하세요.
+
+```powershell
+python -m pip install -r requirements.txt
+pwsh -NoLogo -NoProfile -File .\Start-Workshop.ps1
+```
+
+Python 서버만 직접 실행할 수도 있어요. 브라우저는 직접 열어주세요.
+
+```powershell
+python server.py --port 8766
+```
+
+서버 종료는 실행 중인 해당 Python 프로세스를 종료하면 돼요. 실행기의 프로세스 ID는
+`workshop.pid`, 로그는 `workshop.log`와 `workshop-error.log`에 남아요.
+서버는 이 PC의 루프백 주소에만 연결돼요.
+
+## 처음 작업하기
+
+1. **함선 모델 열기**에서 자동 감지된 워쉽 설치 폴더를 확인하세요.
+   국가·함종·이름으로 검색하고 함선을 클릭하면 패키지에서 해당 모델만 준비해요.
+   게임 썸네일도 패키지에서 직접 읽어요. 설치 경로가 감지되지 않으면 직접 지정하세요.
+   기존 OBJ·MTL 폴더와 내장 리소스 GLB는 접힌 **기존 추출 모델** 메뉴에서 열 수 있어요.
+   설치된 Toolbox의 기존 출력 폴더는 편의를 위한 선택 사항이에요.
+2. 부품을 클릭하거나 왼쪽 텍스처 목록에서 편집할 이미지를 고르세요.
+3. 브러시·지우개는 2D 텍스처와 3D 표면에서 모두 작동해요.
+   **이미지**를 가져온 뒤 2D 캔버스를 클릭하면 평면 배치되고, 3D 표면을 클릭하면
+   편집 가능한 이미지 레이어로 배치돼요. 다시 드래그하면 같은 레이어가 이동하고,
+   이미지 위의 모서리 핸들로 크기, 위쪽 원형 핸들로 회전을 조절할 수 있어요.
+   오른쪽 레이어 설정에서도 크기·회전·위치를 조절할 수 있어요.
+   이동 중에는 가벼운 미리보기를 표시하고, 놓으면 작업 스레드에서 원래 UV에 맞춰 구워요.
+   원본 이미지와 배치 정보도 프로젝트에 저장돼요. 다른 재질로의 이동은 아직 지원하지 않아요.
+   이미지 도구에서도 휠로 확대·축소, 오른쪽 드래그로 회전, 가운데 드래그로 화면 이동이 돼요.
+4. 레이어의 순서·불투명도·합성 방식·표시를 조절하세요.
+   **원본과 비교**로 원래 텍스처를 확인하세요.
+5. **프로젝트 저장**은 원본 참조와 편집 레이어를 `.wowskin`으로 저장해요.
+   **텍스처 출력**은 변경한 텍스처를 PNG 또는 DDS ZIP으로 내려받아요.
+
+키보드: `Ctrl+C` 선택 레이어 복사, `Ctrl+V` 레이어 또는 클립보드 이미지 붙여넣기,
+`Ctrl+Z` 되돌리기, `Ctrl+Shift+Z` 또는 `Ctrl+Y` 다시 실행, `Ctrl+S` 저장, `Escape` 보기 도구.
+텍스트 입력칸에서는 원래 텍스트 단축키를 유지해요. 투영 레이어는 같은 작업 텍스처에 붙여넣어요.
+자동 저장은 현재 브라우저의 IndexedDB에 보관돼요. 다음 실행의 모델 열기 창에서 복원할 수 있어요.
+중요한 작업은 별도로 프로젝트 파일을 내려받아 보관하세요.
+
+브러시 기본 색은 완전 검정(`#000000`)이에요. 브러시·지우개 작업 중 `Shift`를 누르면
+기준점부터 현재 커서까지 직선을 미리 보여줘요. 각도는 자유롭게 정하며 고정 각도로 맞추지 않아요.
+
+함선 목록의 체크박스로 여러 함선을 고르고 **선택 함선 미리 준비**를 누르면
+현재 편집을 유지하면서 순서대로 추출해요. 준비 현황에서 대기·진행·완료 상태를 볼 수 있어요.
+서버를 종료하면 대기열은 사라지지만, 준비가 끝난 함선의 캐시는 다음 실행에도 재사용해요.
+
+외부에서 작업한 스킨은 해당 함선을 연 뒤 **스킨 텍스처 불러오기**로 PNG·DDS를 가져오세요.
+파일명으로 대상 재질을 찾고, 찾지 못한 경우 직접 고를 수 있어요. 원본과 크기가 같은 텍스처를
+편집 가능한 교체 레이어로 추가하며 투명도도 유지해요. PSD는 PNG 또는 DDS로 내보낸 뒤 가져오세요.
+PSD 안의 개별 레이어는 가져오지 않아요.
+
+## 한국어 / English
+
+오른쪽 위의 언어 선택으로 UI와 함선 이름 언어를 바꿔요. 언어 전환은 화면을 다시 열기 때문에
+편집 중이면 프로젝트를 먼저 저장하세요. 국가·함종의 내부 값은 언어와 독립적으로 유지돼요.
+
+- 한국어: `bin/<build>/res/texts/ko/LC_MESSAGES/global.mo`
+- English: `bin/<build>/res/texts/en/LC_MESSAGES/global.mo`
+
+함선 목록 캐시는 설치본·빌드·언어별로 분리돼요. 선택한 언어 파일이 없으면
+다른 언어로 조용히 대체하지 않고 오류를 표시해요.
+`web/i18n.js`가 UI 번역을 관리하며, 새 기능은 메시지 ID와 변수 치환을 사용해요.
+초기 프로토타입의 문구는 같은 번역 모듈의 호환 사전에 있어요.
+
+## 지원 범위
+
+- OBJ/MTL 모델, 내장 리소스를 사용하는 GLB, 부품 숨기기·단독 표시·검색
+- 회전·확대, 측면·위·정면, 와이어프레임, UV 경계 보기
+- 2D/3D 페인팅, 이미지·글자 레이어, 평면 이미지의 UV 투영
+- 같은 메시의 반대편 거울상 투영 옵션
+- 설치된 게임의 국가·함종별 목록, 패키지 썸네일, 함선의 자동 추출과 빌드별 캐시
+- 한국어·영어 UI와 언어별 `global.mo` 이름
+- 클릭 가능한 3D 축 표시, 선체·무장·대공포·항공기·기타 재질 분류
+- 색상·광택·금속성·거칠기·노멀 X/Y 채널 보기
+- 레이어 편집, 되돌리기, 프로젝트 저장·복원, 브라우저 자동 저장
+- PNG, DDS RGBA 또는 DXT5 출력과 전체 밉맵 생성
+- `camouflages.xml`의 `colorScheme` 색상 편집과 XML 내려받기
+
+## 첫 버전의 제한
+
+- 현재 자동 목록·추출은 Windows의 World of Warships PC판을 지원해요.
+  Legends·Korabli·Blitz 설치본은 이 에디터의 자동 추출 대상으로 검증하지 않았어요.
+- 텍스처는 최대 4096×4096, 직접 가져오는 GLB는 64 MiB, 배치 이미지는 16 MiB까지예요.
+  4K 텍스처와 여러 레이어는 메모리를 많이 사용해요. 되돌리기는 최대 16개·약 192 MiB의 래스터 복사로 제한돼요.
+- GLB와 OBJ의 UV 방향을 구분해 3D 투영해요.
+- 3D 투영은 선택한 적용 범위와 재질에만 구워요. 다른 재질의 반대편 부품에는 자동으로 복제하지 않아요.
+  공유 UV는 여러 표면에 같은 무늬가 나타날 수 있어요. 실제 함선의 UV 상태에 따라 결과를 확인하세요.
+- OBJ 프로젝트에는 원본 모델을 넣지 않아요. 복원 시 기존 모델 폴더가 같은 위치에 있어야 해요.
+  직접 가져온 GLB는 프로젝트에 포함돼요. 프로젝트와 모델 경로를 타인에게 공유하기 전에 확인하세요.
+- 재질 채널은 실제 원본 맵에서 읽는 **미리보기**예요. 현재 페인팅·레이어 편집·DDS 출력 대상은 색상 맵이에요.
+  광택·거칠기·금속성·노멀을 편집해 원래 게임 DDS 채널로 재포장하는 기능과 PSD는 아직 없어요.
+- 위장 XML 색상은 편집·출력만 지원해요. 게임의 위장 셰이더 결과를 3D로 재현하지 않아요.
+- 출력 경로는 Toolbox의 manifest를 이용한 제안이에요. 알베도 경로가 없는 경우 관련 `_mg.dds`에서 `_a.dds`를 추정해요.
+  ZIP을 적용하기 전에 경로와 해당 게임 버전의 `res_mods` 폴더를 확인하세요.
+- 게임 원본이나 `res_mods`에 자동 설치하지 않아요. 원본 모델 폴더도 변경하지 않아요.
+  실제 게임 안의 표시 결과는 아직 검증하지 않았어요.
+
+## 성능과 캐시
+
+OBJ 파싱은 module Worker에서 수행하고, 버퍼는 복사 대신 전송해요.
+3D 미리보기는 기본 2K, 가벼운 1K, 정밀한 4K를 고를 수 있어요.
+원본 편집 캔버스와 출력은 원래 크기를 유지해요. PNG 자동 저장은 비동기 인코딩을 사용해요.
+화면·시점·텍스처가 바뀔 때만 렌더링하고, 편집 중 텍스처는 밉맵을 매번 만들지 않아요.
+브러시 작업은 변경된 영역만 합성하고 작업 중 3D 미리보기를 최대 1K로 낮춰요.
+획을 끝내면 선택한 미리보기 품질로 돌아오며 편집·출력 해상도는 유지해요.
+첫 패키지 읽기와 원본 텍스처 준비에는 시간이 필요해요. 모든 PC에서 같은 프레임 속도를 보장하지는 않아요.
+
+포터블 실행본의 캐시는 `%LOCALAPPDATA%/WoWSSkinWorkshop/Cache`, 소스 실행의 기본 캐시는 `.cache`예요.
+`WOWS_WORKSHOP_CACHE` 환경 변수로 위치를 바꿀 수 있어요. 게임 설치 폴더에는 쓰지 않아요.
+게임 업데이트 시 빌드별 캐시를 나눠 사용하고, **목록 갱신**으로 같은 빌드의 번역 변경도 다시 읽을 수 있어요.
+
+## 검증
+
+```powershell
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+`tests/smoke.cjs`는 Node.js와 Playwright Chromium을 사용해 실제 Ōta 모델로
+브러시·되돌리기·글자 변환·DDS 출력·프로젝트 복원·XML 보존·3D 투영을 검증해요.
+서버를 먼저 실행하고 `WORKSHOP_URL`을 설정하세요. Playwright 런타임은 앱 의존성이 아니에요.
+`tests/glb.cjs`는 작은 내장 텍스처 GLB로 가져오기·편집·프로젝트 복원을 별도로 확인해요.
+`tests/library.cjs`는 설치 감지·패키지 아이콘·국가 필터·언어별 번역 목록을 검증해요.
+`TEST_EXTRACTION=1`이면 내장 엔진의 실제 함선 추출과 모델 로딩도 확인해요.
+`tests/editor-features.cjs`는 재질 채널·축 표시·2K 미리보기·유휴 렌더링 중지를 확인해요.
+
+현재 검증 모델: Ōta, 71개 메시, 22개 알베도 텍스처, 선체 4096×4096.
+내보낸 DDS의 크기·알파·밉맵, ZIP 경로 검증은 Python 테스트로 확인해요.
+
+## 코드와 출처
+
+- `server.py`: 모델 라이브러리와 로컬 파일 제공, ZIP/DDS 출력
+- `game_library.py`: 설치 감지, 언어별 목록, 패키지 썸네일, 추출 작업
+- `engine/Backend`: 라이선스와 함께 포함한 독립 추출 엔진
+- `scripts/build-portable.ps1`: CPython embeddable runtime을 사용한 포터블 ZIP 생성
+- `web/app.js`: 모델과 편집 작업 흐름
+- `web/document.js`: 레이어 합성과 프로젝트 직렬화
+- `web/projection.js`: 3D 평면 이미지를 UV로 구워 넣기
+- `research/wt-editor/FEATURE_REVIEW.md`: 참고 에디터의 기능 조사
+- `THIRD_PARTY_NOTICES.md`: 포함된 외부 라이브러리
+
+War Thunder Skin Editor의 소스 코드는 이 앱에 포함하지 않았어요.
+게임 에셋과 사용자가 불러오는 모델·이미지의 권리는 각 권리자에게 있어요.

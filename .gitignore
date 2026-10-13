@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+research/
+tests/output/
+*.log
+*.pid
+.cache/
+dist/

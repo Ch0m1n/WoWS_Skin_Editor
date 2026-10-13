@@ -1,0 +1,50 @@
+import json
+import sys
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+import tempfile
+import time
+import threading
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+import game_library as g
+
+class LibraryTests(unittest.TestCase):
+    def test_extraction_queue_runs_one_ship_at_a_time(self):
+        first_started=threading.Event();release=threading.Event();second_started=threading.Event()
+        def first(progress):
+            first_started.set();release.wait(3);return {'first':True}
+        key=g.start_job('queue-first-'+str(time.time()),first,serial=True)
+        self.assertTrue(first_started.wait(1))
+        second=g.start_job('queue-second-'+str(time.time()),lambda p:(second_started.set() or {'second':True}),serial=True)
+        try:
+            self.assertEqual(g.JOBS[second]['status'],'queued');self.assertFalse(second_started.is_set())
+        finally:release.set()
+        self.assertTrue(second_started.wait(1))
+    def test_preview_precedes_silhouette(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp, patch.object(g, 'game_dir', return_value=Path(tmp)), patch.object(g, 'cache_dir', return_value=Path(tmp)), patch.dict(g.GAMES, {'test': {'entries': {'/gui/ship_preview/pjsc769.png': 'preview', '/gui/ship_icons/pjsc769.png': 'icon'}}}), patch('game_archive.extract_entry', return_value=b'preview') as extract:
+            self.assertEqual(g.thumbnail('test', 'PJSC769').read_bytes(), b'preview')
+            self.assertEqual(extract.call_args.args[1], 'preview')
+    def test_job_exposes_measured_progress(self):
+        def work(progress):
+            progress('Textures', percent=54, stage='texture')
+            return {'ok': True}
+        key = g.start_job('test-progress-'+str(time.time()), work)
+        for _ in range(100):
+            if g.JOBS[key]['status'] != 'running': break
+            time.sleep(.01)
+        self.assertEqual(g.JOBS[key]['status'], 'done')
+        self.assertEqual(g.JOBS[key]['percent'], 100)
+        self.assertEqual(g.JOBS[key]['stage'], 'texture')
+    def test_invalid_install(self):
+        self.assertIsNone(g.install_info(Path(__file__).parent))
+    def test_unknown_game_is_rejected(self):
+        with self.assertRaises(ValueError):g.game_dir('unknown')
+    def test_invalid_language_is_rejected(self):
+        with self.assertRaises(ValueError):g.catalog_job('unknown',language='zh')
+    def test_installed_engine_is_self_contained(self):
+        # Pure-Python components must import using only the included engine and Pillow.
+        import catalog, native_glb_export, compat_cache
+        self.assertTrue((g.ENGINE/'wowsunpack.exe').is_file())
+
+if __name__=='__main__':unittest.main()

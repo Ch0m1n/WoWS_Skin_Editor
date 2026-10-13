@@ -1,0 +1,113 @@
+// Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
+export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
+const messages = {
+  importSkinTextures:{ko:'외부 스킨 텍스처 가져오기',en:'Import skin textures'},
+  textureImportHelp:{ko:'PNG/DDS 이름으로 재질을 찾아요. 각 파일의 적용 텍스처를 확인한 뒤 가져오세요. 원본 파일은 수정하지 않아요.',en:'Match PNG/DDS files by name, then choose their target materials. Source files remain unchanged.'},
+  applyTextureImport:{ko:'편집 레이어로 가져오기',en:'Import as editable layers'},readingExternalTextures:{ko:'외부 스킨 텍스처를 읽는 중이에요.',en:'Reading external skin textures…'},
+  chooseTextureTarget:{ko:'적용할 텍스처 선택',en:'Choose target texture'},chooseAllTextureTargets:{ko:'모든 파일의 적용 텍스처를 선택해주세요.',en:'Choose a target for every file.'},
+  externalTextureTooLarge:{ko:'텍스처 파일은 32 MiB 이하로 선택하세요.',en:'Texture files must be 32 MiB or smaller.'},
+  duplicateTextureTarget:{ko:'같은 텍스처에 여러 파일을 동시에 적용할 수 없어요.',en:'Assign a different target to each file.'},
+  textureSizeMismatch:{ko:'{name}: 원본 재질과 텍스처 크기가 달라요.',en:'{name}: dimensions differ from the original material.'},
+  tooManyTextureLayers:{ko:'텍스처당 최대 40개 레이어를 지원해요.',en:'Up to 40 layers are supported per texture.'},
+  externalTexturesImported:{ko:'외부 스킨 텍스처 {count}개를 편집 레이어로 가져왔어요.',en:'Imported {count} skin textures as editable layers.'},
+  textureReplaceBlend:{ko:'텍스처 교체',en:'Replace texture'},
+  prepareSelected:{ko:'선택 함선 미리 준비',en:'Prepare selected ships'},clearPreselection:{ko:'선택 해제',en:'Clear selection'},
+  preparationQueue:{ko:'미리 준비 대기열',en:'Preparation queue'},queueSummary:{ko:'미리 준비 · {count}척 진행 중',en:'Preparation · {count} active'},
+  preselectedCount:{ko:'{count}척 선택',en:'{count} selected'},preselectShip:{ko:'{name} 미리 준비 선택',en:'Select {name} for preparation'},
+  queuedShips:{ko:'{count}척을 대기열에 넣었어요. 창을 닫고 현재 함선을 계속 편집해도 돼요.',en:'{count} ships queued. Close this dialog and keep editing the current ship.'},
+  queueWaiting:{ko:'다른 함선 준비가 끝나기를 기다리는 중',en:'Waiting for the preceding ship'},
+  queuequeued:{ko:'대기 중',en:'Queued'},queuerunning:{ko:'준비 중',en:'Preparing'},queuedone:{ko:'준비 완료',en:'Ready'},queueerror:{ko:'준비 실패',en:'Failed'},
+  imageTransformHandles:{ko:'이미지 크기·회전 조절 핸들',en:'Image resize and rotation handles'},
+  clipboardImage:{ko:'클립보드 이미지',en:'Clipboard image'},
+  waitForImageLayer:{ko:'이미지 레이어 반영이 끝나면 복사하세요.',en:'Wait for the image layer update before copying.'},
+  layerCopied:{ko:'선택한 레이어를 복사했어요. Ctrl+V로 붙여넣으세요.',en:'Layer copied. Press Ctrl+V to paste.'},
+  layerPasted:{ko:'레이어를 붙여넣었어요.',en:'Layer pasted.'},
+  copySuffix:{ko:'복사',en:'copy'},
+  pasteSameTexture:{ko:'이 레이어는 원래 작업 텍스처에 붙여넣어주세요.',en:'Paste this layer onto its original working texture.'},
+  imageLayerHint:{ko:'왼쪽 드래그: 이미지 이동 · 휠: 확대 · 오른쪽 드래그: 회전 · 가운데 드래그: 화면 이동',en:'Left drag: move image · wheel: zoom · right drag: orbit · middle drag: pan'},
+  updatingImageLayer:{ko:'이미지 레이어를 텍스처에 반영하는 중이에요. 화면은 계속 조작할 수 있어요.',en:'Updating the image layer in the background. The viewport remains interactive.'},
+  imageLayerReady:{ko:'이미지 레이어를 반영했어요. 같은 레이어를 드래그하거나 크기·회전을 조절하세요.',en:'Image layer updated. Drag it again, or adjust its size and rotation.'},
+  projectionEmpty:{ko:'이 표면에 이미지가 닿지 않아요. 위치나 크기를 조절하세요.',en:'The image does not reach this surface. Adjust its position or size.'},
+  chooseImageLayer:{ko:'이미지를 불러오거나 이미지 레이어를 선택하세요.',en:'Import an image or select an image layer.'},
+  imageSameTexture:{ko:'같은 텍스처를 사용하는 표면으로 옮겨주세요.',en:'Move the image onto a surface sharing the same texture.'},
+  preparationProgress:{ko:'함선 준비 진행률',en:'Ship preparation progress'},
+  packageStage:{ko:'패키지 추출 중 · 진행률 계산 중',en:'Extracting packages · measuring progress'},
+  conversionProgress:{ko:'편집용 변환 {percent}%',en:'Editable conversion {percent}%'},
+  elapsedTime:{ko:'경과 {seconds}초',en:'Elapsed {seconds}s'},
+  remainingEstimate:{ko:'준비 완료까지 약 {seconds}초 · 이전 작업 기준',en:'About {seconds}s to prepare · based on previous runs'},
+  estimatingRemaining:{ko:'남은 시간 계산 중',en:'Estimating remaining time'},
+  catalogReady:{ko:'게임 패키지에서 {count}척을 읽었어요 · {locale} global.mo · 선택한 함선만 추출해요',en:'{count} ships from game packages · {locale} global.mo · models are prepared on demand'},
+  pageCount:{ko:'{count}척 · {page} / {pages}',en:'{count} ships · {page} / {pages}'},
+  Tier:{ko:'단계',en:'Tier'},
+  modelOpened:{ko:'{name} 모델을 열었어요. 부품을 클릭하거나 이미지를 불러오세요.',en:'{name} loaded. Select a part or import an image.'},
+  textureMeta:{ko:'{width} × {height} / {count}개 부품 공유',en:'{width} × {height} / {count} shared parts'},
+  imageReady:{ko:'{name} 준비됨 · 3D 표면에 놓으면 편집 가능한 이미지 레이어가 돼요. 다시 드래그해 이동하고 오른쪽에서 크기를 조절하세요.',en:'{name} ready · place it on a 3D surface as an editable image layer. Drag it again to move, or resize in the properties panel.'},
+};
+const en = {
+  '설치된 게임에서 함선을 고르세요. 사전 언팩이나 Toolbox 설치는 필요하지 않아요.':'Choose a ship from your installed game. No Toolbox installation or pre-unpacking is needed.',
+  '모델 열기':'Open ship','프로젝트 열기':'Open project','프로젝트 저장':'Save project','내보내기':'Export','파일 작업':'File actions',
+  '함선을 불러오세요':'Choose a ship','새 프로젝트':'New project','함선 부품':'Ship parts','부품 검색':'Search parts','부품 이름 검색':'Search part names',
+  '모두 표시':'Show all','선택 부품만':'Isolate part','모델을 열면 부품이 여기에 나타나요.':'Parts will appear after loading a model.',
+  '작업 텍스처':'Material textures','텍스처 선택':'Select texture','부품을 클릭해서 텍스처를 선택하세요.':'Click a part to select its texture.',
+  'UV 경계 표시':'UV wireframe','원본과 비교':'Compare original','위장 색상 · XML':'Camouflage colors · XML','게임 원본은 읽기만 해요.':'Game files are read only.',
+  '작업은 프로젝트로, 결과는 ZIP으로 저장해요.':'Save your project and export textures as ZIP.',
+  '보기':'View','브러시':'Brush','지우개':'Erase','이미지':'Image','텍스트':'Text','색 채우기':'Fill','크기':'Size',
+  '모델 회전 · 부품 선택':'Orbit model · select part','2D와 3D에서 직접 칠하기':'Paint in 2D and 3D','선택한 페인트 레이어 지우기':'Erase on the active paint layer',
+  '이미지를 가져와 2D 배치 또는 3D 투영':'Import an image for 2D placement or 3D projection','문구 레이어 추가':'Add a text layer','전체 텍스처를 색상 레이어로 채우기':'Fill the texture with a color layer','브러시 색상':'Brush color','편집 도구':'Editing tools',
+  '함선 미리보기':'Ship preview','전체 보기':'Fit ship','측면':'Side','위':'Top','정면':'Front','와이어':'Wireframe',
+  '빠르게 · 2K':'Fast · 2K','가볍게 · 1K':'Light · 1K','정밀하게 · 4K':'Full · 4K','미리보기 품질':'Preview quality','축 클릭으로 시점 전환':'Click an axis to change view',
+  '드래그 회전 · 휠 확대 · 클릭 부품 선택':'Drag to orbit · scroll to zoom · click a part','함선을':'Your ship,','작업대 위로.':'on the workbench.',
+  '설치된 게임에서 함선을 골라':'Choose a ship from your installed game','나만의 도색을 만들어보세요.':'Create your own paint scheme.',
+  '함선 모델 열기 ↗':'Choose a ship ↗','자동 게임 감지 · 필요한 함선만 준비':'Automatic game detection · on-demand models','텍스처 작업':'Texture canvas','선택 없음':'None selected','맞춤':'Fit',
+  '브러시: 드래그 · 이미지: 드래그 이동 · Ctrl+Z: 되돌리기':'Brush: drag · Image: drag to move · Ctrl+Z: undo','텍스처 축소':'Zoom out','텍스처 확대':'Zoom in',
+  '레이어':'Layers','새 페인트 레이어':'New paint layer','첫 획부터 새 레이어가 생겨요.':'Your first stroke creates a layer.','복제':'Duplicate','삭제':'Delete','레이어 설정':'Layer properties',
+  '이름':'Name','레이어 선택':'Select a layer','혼합 모드':'Blend mode','일반':'Normal','곱하기':'Multiply','스크린':'Screen','오버레이':'Overlay','불투명도':'Opacity','너비':'Width','회전':'Rotation','이미지 좌우 반전':'Flip image horizontally',
+  '3D 이미지 투영':'3D image projection','이미지를 불러온 뒤 함선 표면을 클릭하세요. 선택 부품의 텍스처에 새 레이어로 투영해요.':'Import an image, then click a ship surface to bake it into the UV texture.',
+  '함선 길이 대비 크기':'Size relative to ship length','투영 회전 °':'Projection rotation °','같은 부품의 반대편에 거울상 투영':'Mirror projection on the opposite side','적용 범위':'Projection scope','클릭한 부품':'Clicked part','같은 재질을 쓰는 부품':'Parts sharing this material','허용 기울기 °':'Maximum surface angle °','표면 깊이 · 이미지 너비 대비 %':'Depth as % of image width',
+  '공유 UV는 다른 부위에도 나타날 수 있어요. 게임 조명·위장은 미리보기와 다를 수 있어요.':'Shared UVs can repeat on other surfaces. Game lighting and camouflage may differ.',
+  '준비됐어요. 함선 모델을 열어주세요.':'Ready. Choose a ship to begin.','함선 모델 열기':'Choose a ship','닫기':'Close',
+  'WoWS Toolbox에서 추출한 모델을 찾았어요. 폴더를 직접 지정할 수도 있어요.':'Select a ship from your installed game, or open a previously exported model.',
+  'OBJ · MTL · 텍스처가 있는 폴더':'Folder containing OBJ, MTL and textures','폴더 불러오기':'Open folder','GLB 파일 직접 열기':'Open GLB file',
+  '첫 버전은 4096 × 4096 이하 텍스처를 지원해요. GLB는 이미지·모델 데이터가 포함된 파일을 사용하세요.':'Textures up to 4096 × 4096 are supported. GLB files must embed their model and image data.',
+  '스킨 내보내기':'Export skin','변경한 텍스처와 위장 XML만 ZIP에 넣어요. 게임 원본의 이름·압축 형식·알파를 확인하세요.':'Export edited textures and camouflage XML. Verify game paths, compression and alpha.',
+  '형식':'Format','DDS 압축':'DDS compression','밉맵 생성':'Generate mipmaps','RGBA / 무압축':'RGBA / uncompressed','ZIP 다운로드':'Download ZIP',
+  '경로 제안은 원본 경로 검증을 대신하지 않아요. Toolbox에서 변환한 도색과 원본 DDS의 차이도 확인하세요.':'Verify suggested paths against game files. Converted colors can differ from original DDS textures.',
+  '텍스트 레이어':'Text layer','문구':'Text','글꼴':'Font','크기 px':'Size in px','맑은 고딕':'Malgun Gothic','레이어 만들기':'Create layer','위장 색상표':'Camouflage palette','원본 위장 XML 불러오기':'Open camouflage XML','색상표':'Palette','수정한 XML 저장':'Save edited XML',
+  '검정·빨강·초록·파랑 마스크에 대응하는 네 색상을 편집해요. 네 번째 수치는 유지해요. 첫 버전에서는 XML 편집만 지원하며 3D 위장 합성은 아직 지원하지 않아요.':'Edit four mask colors while preserving the fourth component. XML editing is supported; 3D camouflage shader preview is not available yet.',
+  '모델을 불러오는 중이에요.':'Loading the model…','첫 모델은 텍스처를 읽는 데 잠시 걸려요.':'The first load may take a moment to prepare textures.',
+  '워쉽 설치 폴더':'World of Warships installation','다시 감지':'Detect again','목록 갱신':'Refresh catalog','자동 감지되지 않으면 설치 폴더를 입력하세요':'Enter the installation folder if it was not detected','폴더 지정':'Set folder','게임 설치 폴더를 찾는 중이에요.':'Detecting installed games…',
+  '전체':'All','전체 함종':'All classes','함종':'Ship class','함선 이름 또는 코드 검색':'Search ship name or code','이전':'Previous','다음':'Next','기존 추출 모델 · 직접 파일 열기':'Existing exports · open local files',
+  '일본':'Japan','미국':'USA','소련':'USSR','독일':'Germany','영국':'UK','프랑스':'France','이탈리아':'Italy','범아시아':'Pan-Asia','유럽':'Europe','네덜란드':'Netherlands','영연방':'Commonwealth','범아메리카':'Pan-America','스페인':'Spain','기타':'Other',
+  '전함':'Battleship','순양함':'Cruiser','구축함':'Destroyer','항공모함':'Aircraft carrier','잠수함':'Submarine','보조함':'Auxiliary',
+  '선체':'Hull','무장':'Weapons','대공포':'Anti-aircraft','항공기':'Aircraft','색상':'Color','광택':'Gloss','금속성':'Metalness','거칠기':'Roughness','노멀':'Normal','노멀 X':'Normal X','노멀 Y':'Normal Y',
+  '원본 텍스처 · 읽기 전용':'Original texture · read only','원본 불러옴':'Original loaded','저장하지 않은 변경':'Unsaved changes','자동 복구 사본 저장됨':'Recovery copy saved','프로젝트 복원됨':'Project restored','프로젝트 다운로드 요청됨':'Project download requested',
+  '마지막 자동 복구 사본 열기':'Restore last recovery copy','모델 폴더를 아래에 입력하세요.':'Enter a model folder below.',
+  '재질 채널 미리보기 · 편집하려면 색상 탭을 선택하세요.':'Material channel preview · choose Color to edit','색상 텍스처를 편집해요.':'Editing the color texture.',
+  '재질 채널은 미리보기예요. 색상 탭에서 편집하세요.':'Material channels are previews. Choose Color to edit.','색상 탭에서 편집하세요.':'Choose Color to edit.','색상 탭에서 이미지를 투영하세요.':'Choose Color to project images.',
+  '게임 패키지에서 함선 목록과 한국어 global.mo를 읽고 있어요.':'Reading the ship catalog and selected global.mo from game packages…','준비 중':'Preparing…','선택한 함선의 패키지를 준비하고 있어요.':'Preparing the selected ship from game packages…','원본 크기의 텍스처와 편집용 부품을 준비하고 있어요.':'Preparing full-resolution textures and editable parts…',
+  '프로젝트를 복원하는 중이에요.':'Restoring project…','텍스처와 밉맵을 만드는 중이에요.':'Creating textures and mipmaps…','모델을 먼저 열어주세요.':'Load a ship first.','원본 비교를 끄고 편집하세요.':'Turn off original comparison to edit.',
+  '프로젝트를 복원했어요. 원본 모델 폴더는 계속 필요해요.':'Project restored. Keep the original model folder available.',
+  '프로젝트 저장을 요청했어요. 다운로드 완료를 확인하세요.':'Project download requested. Check that the download completes.',
+  '편집 결과 ZIP을 저장했어요. 게임 원본과 출력 경로·형식을 비교하세요.':'ZIP exported. Verify paths and formats against the game files.',
+  '3D 이미지를 텍스처에 투영했어요. 공유 UV와 반대편 결과를 확인하세요.':'Image baked into UV textures. Check shared UVs and opposite surfaces.',
+  '부품을 먼저 선택하세요.':'Select a part first.','드래그 회전 · 휠 확대 · 클릭 부품 선택':'Drag to orbit · scroll to zoom · click a part',
+  '표면 드래그로 칠하기 · 보기 도구로 시점 변경':'Drag to paint · choose View to orbit','이미지를 붙일 표면을 클릭 · 3D 크기/회전은 오른쪽 설정':'Click a surface to project · size and rotation are on the right',
+};
+export function t(key, params={}) {
+  let value = messages[key]?.[language] || (language==='en'?en[key]:null) || key;
+  return value.replace(/\{(\w+)\}/g,(_,name)=>params[name]??`{${name}}`);
+}
+export function initI18n(){
+  document.documentElement.lang=language;const selector=document.getElementById('ui-language');selector.value=language;
+  selector.onchange=()=>{if(window.workshop?.state.dirty&&!confirm(language==='en'?'Save your project before switching languages. Switch now?':'언어를 바꾸면 화면을 다시 열어요. 저장하지 않은 작업을 두고 전환할까요?')){selector.value=language;return;}localStorage.setItem('workshop.language',selector.value);location.reload();};
+  if(language!=='en')return;
+  function translate(root){
+    if(root.nodeType===3){if(root.parentElement?.closest('input,textarea,#ship-name,.ship-card strong,.layer-label,.material-card'))return;const raw=root.nodeValue,key=raw.trim();let value=t(key);if(value===key){value=key.replace(/^(선체|무장|대공포|항공기|기타) · /,(_,name)=>t(name)+' · ').replace(/개 부품 공유/g,'shared parts');}if(value!==key)root.nodeValue=raw.replace(key,value);return;}
+    if(root.nodeType!==1)return;
+    if(root.tagName==='SCRIPT'||root.tagName==='STYLE')return;
+    for(const name of ['title','aria-label','placeholder'])if(root.hasAttribute(name)){const value=root.getAttribute(name);root.setAttribute(name,t(value));}
+    for(const child of [...root.childNodes])translate(child);
+  }
+  translate(document.body);
+  new MutationObserver(records=>{for(const r of records){if(r.type==='characterData')translate(r.target);else for(const node of r.addedNodes)translate(node);}}).observe(document.body,{childList:true,subtree:true,characterData:true});
+}

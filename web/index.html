@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WoWS Skin Workshop</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="identity"><span class="brand-mark" aria-hidden="true">W</span><div><strong>WoWS <span>Skin Workshop</span></strong><small>LOCAL TEXTURE STUDIO / 0.1</small></div></div>
+  <nav aria-label="파일 작업"><select id="ui-language" aria-label="Language"><option value="ko">한국어</option><option value="en">English</option></select><button id="open-model">모델 열기</button><button id="open-project">프로젝트 열기</button><button id="save-project">프로젝트 저장</button><button id="export" class="accent">내보내기 <span aria-hidden="true">↗</span></button></nav>
+</header>
+<div class="workbar"><div class="document-title"><span class="live-dot"></span><b id="ship-name">함선을 불러오세요</b><span id="save-state">새 프로젝트</span></div><div class="views" aria-label="작업 화면"><button data-view="3d">3D</button><button data-view="split" class="active">2D + 3D</button><button data-view="2d">2D</button></div><div class="history"><button id="undo" title="되돌리기 (Ctrl+Z)" aria-label="되돌리기">↶</button><button id="redo" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행">↷</button></div></div>
+<main>
+  <aside class="sidebar left-sidebar">
+    <div class="panel-heading"><h2>함선 부품</h2><span id="part-count" class="count">0</span></div>
+    <label class="search"><span class="sr-only">부품 검색</span><input id="part-search" placeholder="부품 이름 검색"></label>
+    <div class="part-actions"><button id="show-all">모두 표시</button><button id="isolate">선택 부품만</button></div>
+    <div id="parts" class="parts"><div class="empty">모델을 열면 부품이 여기에 나타나요.</div></div>
+    <div class="section-line"></div>
+    <div class="panel-heading"><h2>작업 텍스처</h2><span class="micro">ALBEDO</span></div>
+    <label><span class="sr-only">텍스처 선택</span><select id="texture-select"></select></label>
+    <p id="texture-meta" class="muted">부품을 클릭해서 텍스처를 선택하세요.</p>
+    <div id="material-groups" class="material-groups"></div>
+    <label class="check"><input id="uv-overlay" type="checkbox"> UV 경계 표시</label>
+    <label class="check"><input id="compare" type="checkbox">원본과 비교</label>
+    <div class="section-line"></div>
+    <button id="camo-open" class="wide">위장 색상 · XML</button>
+    <p class="sidebar-note">게임 원본은 읽기만 해요.<br>작업은 프로젝트로, 결과는 ZIP으로 저장해요.</p>
+  </aside>
+  <section class="workspace" data-view="split">
+    <div class="toolstrip" role="toolbar" aria-label="편집 도구">
+      <button data-tool="orbit" class="active" title="모델 회전 · 부품 선택"><span>↔</span>보기</button>
+      <button data-tool="brush" title="2D와 3D에서 직접 칠하기"><span>╱</span>브러시</button>
+      <button data-tool="erase" title="선택한 페인트 레이어 지우기"><span>▱</span>지우개</button>
+      <button data-tool="image" title="이미지를 가져와 2D 배치 또는 3D 투영"><span>▧</span>이미지</button>
+      <button id="text-tool" title="문구 레이어 추가"><span>T</span>텍스트</button>
+      <button id="fill-tool" title="전체 텍스처를 색상 레이어로 채우기"><span>◧</span>색 채우기</button>
+      <span class="tool-divider"></span><input id="color" type="color" value="#000000" aria-label="브러시 색상"><label class="inline-label">크기 <input id="brush-size" type="range" min="1" max="160" value="28"><output id="brush-size-value">28</output></label>
+    </div>
+    <div class="canvases">
+      <div id="scene-wrap" class="scene-wrap"><div class="viewport-label"><span>01</span><b>함선 미리보기</b><small id="model-kind">OBJ / GLB</small></div><div id="scene"></div><canvas id="axis-gizmo" width="100" height="100" title="축 클릭으로 시점 전환"></canvas><div class="view-tools"><button id="home-view">전체 보기</button><button data-axis="side">측면</button><button data-axis="top">위</button><button data-axis="front">정면</button><button id="wireframe">와이어</button><select id="preview-quality" aria-label="미리보기 품질"><option value="2048">빠르게 · 2K</option><option value="1024">가볍게 · 1K</option><option value="4096">정밀하게 · 4K</option></select></div><div class="scene-caption" id="scene-hint">드래그 회전 · 휠 확대 · 클릭 부품 선택</div><div id="welcome" class="welcome"><span class="welcome-no">01 / START HERE</span><h1>함선을<br>작업대 위로.</h1><p>설치된 게임에서 함선을 골라<br>나만의 도색을 만들어보세요.</p><button id="welcome-open" class="accent">함선 모델 열기 ↗</button><small>자동 게임 감지 · 필요한 함선만 준비</small></div></div>
+      <div id="texture-wrap" class="texture-wrap"><div class="viewport-label"><span>02</span><b>텍스처 작업</b><small id="texture-label">선택 없음</small><div><button id="zoom-out" aria-label="텍스처 축소">−</button><button id="zoom-fit">맞춤</button><button id="zoom-in" aria-label="텍스처 확대">+</button></div></div><div id="texture-scroll" class="texture-scroll"><div id="texture-stage"><canvas id="texture-canvas" width="1024" height="1024"></canvas><canvas id="uv-canvas" width="1024" height="1024"></canvas></div></div><div class="texture-caption">브러시: 드래그 · 이미지: 드래그 이동 · Ctrl+Z: 되돌리기</div></div>
+    </div>
+  </section>
+  <aside class="sidebar right-sidebar">
+    <div class="panel-heading"><h2>레이어</h2><button id="new-layer" class="icon-button" aria-label="새 페인트 레이어">+</button></div>
+    <div id="layers" class="layers"><div class="empty">첫 획부터 새 레이어가 생겨요.</div></div>
+    <div class="layer-actions"><button id="duplicate-layer">복제</button><button id="layer-up">↑</button><button id="layer-down">↓</button><button id="delete-layer">삭제</button></div>
+    <div class="section-line"></div><div class="panel-heading"><h2>레이어 설정</h2><span id="layer-type" class="micro">—</span></div>
+    <label>이름<input id="layer-name" placeholder="레이어 선택"></label>
+    <label>혼합 모드<select id="blend"><option value="source-over">일반</option><option value="multiply">곱하기</option><option value="screen">스크린</option><option value="overlay">오버레이</option></select></label>
+    <label class="range-label">불투명도 <output id="opacity-value">100%</output><input id="opacity" type="range" min="0" max="100" value="100"></label>
+    <div id="transform-panel"><div class="field-pair"><label>X (%)<input id="layer-x" type="number" value="50" step="1"></label><label>Y (%)<input id="layer-y" type="number" value="50" step="1"></label></div><label class="range-label">너비 <output id="scale-value">35%</output><input id="layer-scale" type="range" min="1" max="150" value="35"></label><label class="range-label">회전 <output id="rotation-value">0°</output><input id="layer-rotation" type="range" min="-180" max="180" value="0"></label><label class="check"><input id="flip" type="checkbox">이미지 좌우 반전</label></div>
+    <div class="section-line"></div><div class="panel-heading"><h2>3D 이미지 투영</h2></div>
+    <p class="muted">이미지를 불러온 뒤 함선 표면을 클릭하세요. 선택 부품의 텍스처에 새 레이어로 투영해요.</p>
+    <label class="range-label">함선 길이 대비 크기<output id="stamp-size-value">12%</output><input id="stamp-size" type="range" min="1" max="60" value="12"></label>
+    <label>투영 회전 °<input id="stamp-rotation" type="number" min="-180" max="180" value="0"></label>
+    <label>적용 범위<select id="stamp-scope"><option value="part">클릭한 부품</option><option value="material">같은 재질을 쓰는 부품</option></select></label>
+    <label>허용 기울기 °<input id="stamp-angle" type="number" min="1" max="89" value="75"></label>
+    <label>표면 깊이 · 이미지 너비 대비 %<input id="stamp-depth" type="number" min="1" max="200" value="35"></label>
+    <label class="check"><input id="stamp-mirror" type="checkbox">같은 부품의 반대편에 거울상 투영</label>
+    <p class="notice">공유 UV는 다른 부위에도 나타날 수 있어요. 게임 조명·위장은 미리보기와 다를 수 있어요.</p>
+  </aside>
+</main>
+<footer><span id="status" role="status" aria-live="polite">준비됐어요. 함선 모델을 열어주세요.</span><span id="geometry-info">LOCAL / OFFLINE</span></footer>
+
+<dialog id="model-dialog"><div class="dialog-heading"><div><span class="eyebrow">SHIP LIBRARY</span><h2>함선 모델 열기</h2></div><button data-close aria-label="닫기">×</button></div><p class="muted">설치된 게임에서 함선을 고르세요. 사전 언팩이나 Toolbox 설치는 필요하지 않아요.</p><div id="model-library" class="model-library"></div><div class="section-line"></div><label>OBJ · MTL · 텍스처가 있는 폴더<input id="folder-path" placeholder="예: D:\\Models\\Tirpitz"></label><button id="load-folder" class="accent wide">폴더 불러오기</button><button id="load-glb" class="wide">GLB 파일 직접 열기</button><p class="muted">첫 버전은 4096 × 4096 이하 텍스처를 지원해요. GLB는 이미지·모델 데이터가 포함된 파일을 사용하세요.</p></dialog>
+<dialog id="export-dialog"><div class="dialog-heading"><div><span class="eyebrow">EXPORT</span><h2>스킨 내보내기</h2></div><button data-close aria-label="닫기">×</button></div><p class="muted">변경한 텍스처와 위장 XML만 ZIP에 넣어요. 게임 원본의 이름·압축 형식·알파를 확인하세요.</p><div class="field-pair"><label>형식<select id="export-format"><option value="dds">DDS</option><option value="png">PNG</option></select></label><label>DDS 압축<select id="dds-format"><option value="dxt5">DXT5 / BC3</option><option value="rgba">RGBA / 무압축</option></select></label></div><label class="check"><input id="mipmaps" type="checkbox" checked>밉맵 생성</label><div id="export-paths"></div><p class="notice">경로 제안은 원본 경로 검증을 대신하지 않아요. Toolbox에서 변환한 도색과 원본 DDS의 차이도 확인하세요.</p><button id="download-export" class="accent wide">ZIP 다운로드</button></dialog>
+<dialog id="text-dialog"><div class="dialog-heading"><h2>텍스트 레이어</h2><button data-close aria-label="닫기">×</button></div><label>문구<textarea id="text-value" rows="3" maxlength="300">WoWS</textarea></label><div class="field-pair"><label>글꼴<select id="text-font"><option value="Malgun Gothic">맑은 고딕</option><option value="Georgia">Georgia</option><option value="Consolas">Consolas</option></select></label><label>크기 px<input id="text-size" type="number" min="8" max="512" value="100"></label></div><button id="add-text" class="accent wide">레이어 만들기</button></dialog>
+<dialog id="camo-dialog"><div class="dialog-heading"><div><span class="eyebrow">CAMOUFLAGE</span><h2>위장 색상표</h2></div><button data-close aria-label="닫기">×</button></div><button id="load-xml" class="wide">원본 위장 XML 불러오기</button><label>색상표<select id="scheme-select"></select></label><div id="camo-colors" class="camo-colors"></div><p class="muted">검정·빨강·초록·파랑 마스크에 대응하는 네 색상을 편집해요. 네 번째 수치는 유지해요. 첫 버전에서는 XML 편집만 지원하며 3D 위장 합성은 아직 지원하지 않아요.</p><button id="save-xml" class="accent wide">수정한 XML 저장</button></dialog>
+<input id="project-file" type="file" accept=".wowskin,.json" hidden><input id="glb-file" type="file" accept=".glb" hidden><input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><input id="xml-file" type="file" accept=".xml" hidden>
+<div id="busy" class="busy" hidden><div><span class="spinner"></span><b id="busy-label">모델을 불러오는 중이에요.</b><p>첫 모델은 텍스처를 읽는 데 잠시 걸려요.</p></div></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
