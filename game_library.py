@@ -311,6 +311,53 @@ def catalog_job(key, refresh=False, language='ko'):
         return {'game': install_info(folder), 'ships': rows, 'language': language, 'translation': str(translation)}
     return start_job(f'catalog:{key}:{GAMES[key]["build"]}:{language}:{uuid.uuid4().hex if refresh else "cache"}', work)
 
+def camouflage_labels(key, raw, language):
+    if language not in ('ko','en'): raise ValueError('지원하지 않는 언어예요.')
+    from mo_reader import read_mo
+    from game_archive import find_entry, decode_game_params, root_params, extract_entry
+    import xml.etree.ElementTree as ET
+    folder=game_dir(key)
+    translation=folder/'bin'/str(GAMES[key]['build'])/'res/texts'/language/'LC_MESSAGES/global.mo'
+    if not translation.is_file(): return {}
+    target=cache_dir(key)/f'camouflage-labels-v1-{language}.json'
+    if target.is_file(): return json.loads(target.read_text(encoding='utf-8'))
+    translations=read_mo(translation)
+    entry=find_entry(GAMES[key]['entries'],('GameParams.data','GameParams_py2.data'))
+    params=root_params(decode_game_params(extract_entry(folder,entry)))
+    names={}
+    for value in params.values():
+        if not isinstance(value,dict) or not value.get('camouflage'): continue
+        ids='IDS_'+str(value.get('name','')).upper()
+        label=translations.gettext(ids).strip()
+        if not label or label==ids: continue
+        names.setdefault(str(value['camouflage']).casefold(),set()).add(label)
+    labels={}
+    for camo in ET.fromstring(raw).findall('camouflages.xml/camouflage'):
+        localized=names.get((camo.findtext('name') or '').strip().casefold(),())
+        for scheme in camo.findall('colorSchemes'):
+            code=((scheme.text or '').strip().split() or [''])[0]
+            if code: labels.setdefault(code,set()).update(localized)
+    labels={code:sorted(values) for code,values in labels.items() if values}
+    pending=target.with_suffix('.'+uuid.uuid4().hex+'.tmp')
+    pending.write_text(json.dumps(labels,ensure_ascii=False),encoding='utf-8');pending.replace(target)
+    return labels
+
+
+def camouflage_xml(key, language='ko'):
+    """Read only the installed build's original archive entry, never res_mods."""
+    folder = game_dir(key)
+    install_info(folder)  # Discard a stale archive index after a game update.
+    from game_archive import read_archive_index, extract_entry
+    with INDEX_LOCK:
+        if 'entries' not in GAMES[key]: GAMES[key]['entries'] = read_archive_index(folder)[1]
+        entry = GAMES[key]['entries'].get('/camouflages.xml')
+        if not entry: raise FileNotFoundError('게임 원본 camouflages.xml을 찾지 못했어요.')
+        if entry.unpacked_size > 32 * 1024 * 1024: raise ValueError('위장 XML이 32 MiB를 넘어요.')
+        data = extract_entry(folder, entry)
+    return {'name': 'camouflages.xml', 'xml': data.decode('utf-8-sig'),
+            'game': install_info(folder), 'labels':camouflage_labels(key,data,language), 'language':language}
+
+
 def thumbnail(key, code):
     folder = game_dir(key)
     if not re.fullmatch(r'[A-Z0-9_]{4,40}', code): raise ValueError('함선 코드가 올바르지 않아요.')

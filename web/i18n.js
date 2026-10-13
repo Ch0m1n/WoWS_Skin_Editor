@@ -1,6 +1,21 @@
 // Stable message IDs for new features; Korean source phrases bridge the first prototype UI.
 export const language = localStorage.getItem('workshop.language') === 'en' ? 'en' : 'ko';
 const messages = {
+  xmlExternalEntities:{ko:'외부 엔터티 선언이 있는 XML은 지원하지 않아요.',en:'XML containing DTD or entity declarations is not supported.'},
+  xmlInvalidSyntax:{ko:'XML 문법을 확인하세요. 닫히지 않은 태그나 잘못된 문자가 있어요.',en:'Check the XML syntax for unclosed tags or invalid characters.'},
+  xmlMissingSchemes:{ko:'colorScheme 항목이 없는 XML이에요.',en:'This XML has no colorScheme entries.'},
+  xmlTooLarge:{ko:'XML은 32 MiB 이하로 선택하세요.',en:'Select an XML file of 32 MiB or less.'},
+  camoGameLoad:{ko:'게임 원본 XML 불러오기',en:'Open original XML from game'},
+  camoNamesUnavailable:{ko:'번역명을 불러오지 못해 원본 코드를 표시해요.',en:'Names could not be loaded; showing original codes.'},
+  camoFileLoad:{ko:'XML 파일 불러오기',en:'Open XML file'},
+  camoReading:{ko:'게임 원본 camouflages.xml을 읽고 있어요.',en:'Reading the original camouflages.xml from the game.'},
+  camoReady:{ko:'{count}개 색상표 · {folder} / {build}',en:'{count} palettes · {folder} / {build}'},
+  camoNoGame:{ko:'게임 설치 폴더를 찾지 못했어요. 함선 모델 열기에서 폴더를 지정하세요.',en:'No game installation found. Set its folder in Open ship.'},
+  camoReplace:{ko:'수정한 위장 XML을 다른 파일로 바꿀까요? 저장하지 않은 XML 변경은 사라져요.',en:'Replace the edited camouflage XML? Unsaved XML changes will be lost.'},
+  '게임 원본 camouflages.xml을 찾지 못했어요.':{ko:'게임 원본 camouflages.xml을 찾지 못했어요.',en:'The original camouflages.xml was not found in the game archive.'},
+  '위장 XML이 32 MiB를 넘어요.':{ko:'위장 XML이 32 MiB를 넘어요.',en:'The camouflage XML exceeds 32 MiB.'},
+  camoLoadFirst:{ko:'먼저 원본 위장 XML을 불러오세요',en:'Open a camouflage XML file first'},
+  camoUnnamed:{ko:'색상표 {number}',en:'Palette {number}'},
   memoryBudgetExceeded:{ko:'편집 버퍼가 1 GiB를 넘어요. 백업 후 평면화하고 되돌리기 이력을 비우세요.',en:'Editing buffers exceed 1 GiB. Back up, flatten and clear undo history.'},
   resizeProjectTexture:{ko:'{name}: 게임 텍스처 크기가 바뀌었어요. 레이어를 새 크기에 맞춰 복원할까요?',en:'{name}: game texture dimensions changed. Resize layers to restore this project?'},
   projectResizeCancelled:{ko:'텍스처 크기 변경 복원을 취소했어요.',en:'Texture resize recovery cancelled.'},

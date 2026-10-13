@@ -13,3 +13,5 @@
 #uv-selection-outline{position:absolute;border:1px dashed #ffd28f;pointer-events:none;z-index:6;box-sizing:border-box}.part-mask-controls button{font-size:11px;padding:5px;margin-right:4px}
 
 .toolstrip{position:relative;flex-wrap:wrap;height:auto;min-height:58px;padding-top:6px;padding-bottom:6px}.brush-settings[open]{top:100%}
+
+.brush-settings-dialog{width:min(380px,94vw)}.brush-settings-dialog label{margin:18px 0}.brush-settings-dialog output{display:block;text-align:right;margin-top:4px}.brush-line-angle{position:fixed;z-index:30;pointer-events:none;background:#151b21;color:#ffca80;border:1px solid var(--line);padding:4px 8px;border-radius:4px;font-variant-numeric:tabular-nums}

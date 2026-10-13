@@ -19,7 +19,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
     });
     const screen=async(x,y)=>page.evaluate(({x,y})=>{const v=new fixtureT.Vector3(x,y,0).applyMatrix4(fixture.matrixWorld).project(workshop.camera),r=workshop.renderer.domElement.getBoundingClientRect();return{x:r.x+(v.x+1)*r.width/2,y:r.y+(1-v.y)*r.height/2};},{x,y});
     const drag=async(a,b)=>{await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:1});await page.mouse.up();};
-    await page.locator('[data-tool=brush]').click();await page.locator('#brush-size').fill('4');
+    await page.locator('[data-tool=brush]').click();await page.locator('#brush-size').fill('28');
     await drag(await screen(-.9,.25),await screen(-.1,.25));
     assert(await page.evaluate(()=>{const d=workshop.state.docs.get(workshop.state.activeDoc),ctx=d.layers.at(-1).raster.getContext('2d');for(let u=.1;u<.35;u+=.01)if(!ctx.getImageData(Math.floor(u*d.base.width),Math.floor(.425*d.base.height),1,1).data[3])return false;return true;}),'Fast motion connects adjacent triangles without dotted gaps');
     await drag(await screen(-.4,-.3),await screen(.4,-.3));
@@ -28,7 +28,7 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
     assert.equal(await page.evaluate(()=>{const d=workshop.state.docs.get(workshop.state.activeDoc);return d.layers.at(-1).raster.getContext('2d').getImageData(Math.floor(.22*d.base.width),Math.floor(.425*d.base.height),1,1).data[3];}),0,'Fast eraser uses continuous strokes');
     await page.locator('[data-tool=brush]').click();await page.keyboard.down('Shift');
     const start=await screen(-.9,-.8),intermediate=await screen(-.1,.75),end=await screen(-.1,-.35);
-    await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(intermediate.x,intermediate.y);await page.mouse.move(end.x,end.y);await page.mouse.up();await page.keyboard.up('Shift');
+    await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(intermediate.x,intermediate.y);await page.mouse.move(end.x,end.y);assert(await page.locator('#brush-line-angle').isVisible(),'Shift line shows its live angle');const actualAngle=parseFloat(await page.locator('#brush-line-angle').textContent()),expectedAngle=(Math.atan2(start.y-end.y,end.x-start.x)*180/Math.PI+360)%360;assert(Math.abs(actualAngle-expectedAngle)<1,'Angle follows the arbitrary line direction');await page.mouse.up();await page.keyboard.up('Shift');assert(await page.locator('#brush-line-angle').isHidden(),'Angle hides after the gesture');
     assert(await page.evaluate(()=>{const d=workshop.state.docs.get(workshop.state.activeDoc),ctx=d.layers.at(-1).raster.getContext('2d'),alpha=(u,v)=>ctx.getImageData(Math.round(u*d.base.width),Math.round((1-v)*d.base.height),1,1).data[3];return alpha(.225,.3275)>0&&alpha(.225,.4925)===0;}),'Shift draws an arbitrary angle and removes the old preview instead of painting a fan');
     const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=32;c.getContext('2d').fillRect(0,0,32,32);return c.toDataURL().split(',')[1];});
     await page.locator('#image-file').setInputFiles({name:'editable.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});

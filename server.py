@@ -320,6 +320,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(info)
             if path == '/api/catalog':
                 return self.json({'job': game_library.catalog_job(payload['game'], payload.get('refresh', False), payload.get('language','ko'))})
+            if path == '/api/camouflage-xml':
+                return self.json(game_library.camouflage_xml(payload['game'],payload.get('language','ko')))
+            if path == '/api/camouflage-labels':
+                result=game_library.camouflage_xml(payload['game'],payload.get('language','ko'))
+                return self.json({'labels':result['labels'],'language':result['language']})
             if path == '/api/ship-model':
                 return self.json({'job': game_library.extract_job(payload['game'], payload['code'],payload.get('language','ko'))})
             if path == '/api/cancel-preparation':

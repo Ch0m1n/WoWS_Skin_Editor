@@ -5,7 +5,7 @@ import {MTLLoader} from 'three/addons/loaders/MTLLoader.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {canvas, uid, initializeDocument, newPaint, newImage, composite, serializeLayer, serializeLayerAsync, cloneLayers, restoreLayers, imageFromURL} from './document.js';
 import {bakeProjection, resetProjectionBaker} from './projection-baker.js';
-import {continuousSurface} from './brush-stroke.js';
+import {createSurfaceBrush} from './surface-brush.js';
 import {ShipLibrary} from './ship-library.js';
 import {setupTextureImport} from './texture-import.js';
 import {setupViewportSplitter} from './viewport-splitter.js';
@@ -15,10 +15,11 @@ import {paintStroke} from './brush.js';
 import {setupWorkshopTools} from './workshop-tools.js';
 import {setupPartMask} from './part-mask.js';
 import {initI18n, t, language} from './i18n.js';
+import {parseCamouflageXML as parseXML, serializeCamouflageXML, MAX_CAMOUFLAGE_XML_BYTES} from './camouflage-xml.js';
 
 const $ = id => document.getElementById(id);
 const state = {source: null, docs: new Map(), meshes: [], activeDoc: null, activeLayer: null, selectedMesh: null,
-  tool: 'orbit', image: null, imageName: '', channel: 'albedo', undo: [], redo: [], dirty: false, xml: null, xmlName: 'camouflages.xml', xmlDirty: false};
+  tool: 'orbit', image: null, imageName: '', channel: 'albedo', undo: [], redo: [], dirty: false, xml: null, xmlName: 'camouflages.xml', xmlDirty: false, xmlLabels:{}};
 let model = null, zoom = 'fit', stroke = null, imageDrag = null, autosaveTimer = 0, loading = false;
 let imageHandles=null;
 let renderNeeded = true, pendingDraw = false;
@@ -203,7 +204,7 @@ async function installModel(object, source, savedDocuments = []) {
   if (model) { scene.remove(model); disposeModel(model); }
   for (const doc of state.docs.values()){doc.texture?.dispose();doc.patchTexture?.dispose();}
   model = object; scene.add(model); model.updateMatrixWorld(true);
-  Object.assign(state, {source, docs, meshes, activeDoc: null, activeLayer: null, selectedMesh: null, undo: [], redo: [], dirty: false, xml: null, xmlDirty: false});
+  Object.assign(state, {source, docs, meshes, activeDoc: null, activeLayer: null, selectedMesh: null, undo: [], redo: [], dirty: false, xml: null, xmlDirty: false,xmlLabels:{}});
   for (const [m, key] of originals) { m.userData.docKey = key; m.userData.originalMap = m.map; }
   scene.remove(grid); grid.geometry.dispose(); grid.material.dispose();
   const box = new THREE.Box3().setFromObject(model); box.getSize(size); box.getCenter(center); extent = Math.max(size.x, size.y, size.z);
@@ -440,27 +441,36 @@ function paintPoint(row, x, y, previous) {
   if(stroke?.straight)stroke.straight.region=unionRegion(stroke.straight.region,region);draw(current(),region);
 }
 function straightPreview(shift){
-  if(!shift){if(stroke)stroke.straight=null;return;}
+  if(!shift){if(stroke)stroke.straight=null;straightAngle.hidden=true;return;}
   if(!stroke.straight){const snapshot=canvas(stroke.row.raster.width,stroke.row.raster.height);snapshot.getContext('2d').drawImage(stroke.row.raster,0,0);stroke.straight={snapshot,previous:stroke.previous,screen:stroke.screen,region:null};}
   const line=stroke.straight,region=line.region;
   if(region){const ctx=stroke.row.raster.getContext('2d');ctx.save();ctx.beginPath();ctx.rect(region.x,region.y,region.w,region.h);ctx.clip();ctx.clearRect(region.x,region.y,region.w,region.h);ctx.drawImage(line.snapshot,0,0);ctx.restore();draw(current(),region);}
   line.region=null;stroke.previous=line.previous;if(line.screen)stroke.screen=line.screen;
+}
+const straightAngle=document.createElement('output');straightAngle.id='brush-line-angle';straightAngle.className='brush-line-angle';straightAngle.hidden=true;document.body.append(straightAngle);
+function showStraightAngle(event){
+  if(!event.shiftKey||!stroke){straightAngle.hidden=true;return;}
+  const start=stroke.straight?.screen||stroke.startScreen;
+  if(!start)return;
+  const angle=(Math.atan2(start.y-event.clientY,event.clientX-start.x)*180/Math.PI+360)%360;
+  straightAngle.textContent=angle.toFixed(1)+'°';straightAngle.hidden=false;
+  straightAngle.style.left=Math.min(innerWidth-90,event.clientX+18)+'px';straightAngle.style.top=Math.max(8,event.clientY-32)+'px';
 }
 function texturePoint(event) { const rect = $('texture-canvas').getBoundingClientRect(), doc = current(); return {x: (event.clientX - rect.left) / rect.width * doc.base.width, y: (event.clientY - rect.top) / rect.height * doc.base.height}; }
 $('texture-canvas').addEventListener('pointerdown', action(event => {
   if (event.button || !current() || loading) return;
   if(state.channel!=='albedo'){message('색상 탭에서 편집하세요.',true);return;}
   if(state.tool==='image'&&state.image){checkpoint();const p=texturePoint(event),doc=current(),row=newImage(doc,state.image,state.imageName);row.x=p.x/doc.base.width;row.y=p.y/doc.base.height;addLayer(row);state.image=null;return;}
-  if (state.tool === 'brush' || state.tool === 'erase') { const row = beginPaint(); if (!row) return; stroke = {row, previous: texturePoint(event), where: '2d'}; paintPoint(row, stroke.previous.x, stroke.previous.y); }
+  if (state.tool === 'brush' || state.tool === 'erase') { const row = beginPaint(); if (!row) return; stroke = {row, previous: texturePoint(event), where: '2d',screen:{x:event.clientX,y:event.clientY},startScreen:{x:event.clientX,y:event.clientY}}; paintPoint(row, stroke.previous.x, stroke.previous.y); }
   else if (layer()?.kind === 'image' && !layer().locked && !layer().projection && (state.tool === 'image' || state.tool === 'orbit')) { checkpoint(); const p = texturePoint(event); imageDrag = {p, x: layer().x, y: layer().y, id: layer().id,peers:current().layers.filter(r=>r.kind==='image'&&!r.locked&&state.selectedLayers?.has(r.id)).map(r=>({id:r.id,x:r.x,y:r.y}))}; }
   else return;
   $('texture-canvas').setPointerCapture(event.pointerId);
 }));
 $('texture-canvas').addEventListener('pointermove', event => {
-  if (stroke?.where === '2d') {const samples=event.getCoalescedEvents?.();for (const sample of event.shiftKey?[event]:samples?.length?samples:[event]) {straightPreview(event.shiftKey); const p = texturePoint(sample); paintPoint(stroke.row, p.x, p.y, stroke.previous); stroke.previous = p; } }
+  if (stroke?.where === '2d') {const samples=event.getCoalescedEvents?.();for (const sample of event.shiftKey?[event]:samples?.length?samples:[event]) {straightPreview(event.shiftKey); showStraightAngle(event); const p = texturePoint(sample); paintPoint(stroke.row, p.x, p.y, stroke.previous); stroke.previous = p;stroke.screen={x:sample.clientX,y:sample.clientY}; } }
   else if (imageDrag) { const p = texturePoint(event), row = layer(), doc = current(),dx=(p.x-imageDrag.p.x)/doc.base.width,dy=(p.y-imageDrag.p.y)/doc.base.height; row.x = imageDrag.x + dx; row.y = imageDrag.y +dy;for(const peer of imageDrag.peers){const r=doc.layers.find(r=>r.id===peer.id);if(r){r.x=peer.x+dx;r.y=peer.y+dy;}} draw(); syncProperties(); }
 });
-function endGesture() { if (stroke || imageDrag) { stroke = null; imageDrag = null; changed(); } }
+function endGesture() { straightAngle.hidden=true;if (stroke || imageDrag) { stroke = null; imageDrag = null; changed(); } }
 $('texture-canvas').addEventListener('pointerup', endGesture); $('texture-canvas').addEventListener('pointercancel', endGesture);
 function pick(event) {
   const rect = renderer.domElement.getBoundingClientRect(); mouse.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
@@ -581,31 +591,26 @@ renderer.domElement.addEventListener('pointerdown', action(event => {
   if (state.tool === 'image') {if(!state.image&&!selectImageHit(hit,event.altKey)){deselectImage();return;} beginImageMove(hit,event); return; }
   const row = beginPaint(); if (!row || !hit.uv) return;
   stroke = {row, where: '3d', key: state.activeDoc, previous: null, screen: {x:event.clientX,y:event.clientY}, pointerId:event.pointerId};
-  const x = ((hit.uv.x % 1 + 1) % 1) * row.raster.width, y = (current().flipY ? 1 - ((hit.uv.y % 1 + 1) % 1) : ((hit.uv.y % 1 + 1) % 1)) * row.raster.height;
-  paintPoint(row, x, y); stroke.previous={x,y,hit}; renderer.domElement.setPointerCapture(event.pointerId);
+  surfaceBrush.start(hit,current(),Number($('brush-size').value));
+  surfaceBrush.paint(row,current(),stroke.screen,stroke.screen,brushOptions());renderer.domElement.setPointerCapture(event.pointerId);
 }));
-function paintSurfaceSample(hit) {
-  if (!hit?.uv) { stroke.previous=null; return; }
-  const material = [].concat(hit.object.material)[hit.face.materialIndex] || hit.object.material;
-  if (material.userData.docKey !== stroke.key) { stroke.previous=null; return; }
-  const x = ((hit.uv.x % 1 + 1) % 1) * stroke.row.raster.width, y = (current().flipY ? 1 - ((hit.uv.y % 1 + 1) % 1) : ((hit.uv.y % 1 + 1) % 1)) * stroke.row.raster.height;
-  const prev = continuousSurface(stroke.previous?.hit,hit) ? stroke.previous : null;
-  paintPoint(stroke.row, x, y, prev); stroke.previous = {x, y, hit};
-}
+function brushOptions(){return {color:$('color').value,hardness:Number($('brush-hardness')?.value??100)/100,opacity:Number($('brush-opacity')?.value??100)/100,spacing:Number($('brush-spacing')?.value??15)/100,erase:state.tool==='erase'};}
+const surfaceBrush=createSurfaceBrush({camera,renderer,pick,commit:(row,raster,region,erase)=>{
+  capturePaint(state.undo.at(-1),row,region);partMask.applyRaster(row.raster.getContext('2d'),raster,region,erase);
+  if(stroke?.straight)stroke.straight.region=unionRegion(stroke.straight.region,region);
+  draw(current(),region);
+}});
 function moveSurfaceBrush(event) {
   if (stroke?.where !== '3d' || event.pointerId !== stroke.pointerId) return;
   const samples=event.getCoalescedEvents?.();
   for (const sample of event.shiftKey?[event]:samples?.length ? samples : [event]) {
     straightPreview(event.shiftKey);
-    const end={x:sample.clientX,y:sample.clientY},start=stroke.screen,hit=pick(sample);
-    if (continuousSurface(stroke.previous?.hit,hit)) paintSurfaceSample(hit);
-    else {
-      // Trace the visible surface between sparse input events, rather than connecting UV islands.
-      const steps=Math.max(1,Math.min(64,Math.ceil(Math.hypot(end.x-start.x,end.y-start.y)/3)));
-      for (let i=1;i<=steps;i++) paintSurfaceSample(i===steps?hit:pick({clientX:start.x+(end.x-start.x)*i/steps,clientY:start.y+(end.y-start.y)*i/steps}));
-    }
+    showStraightAngle(event);
+    const end={x:sample.clientX,y:sample.clientY},start=stroke.screen;
+    surfaceBrush.paint(stroke.row,current(),start,end,brushOptions());
     stroke.screen=end;
   }
+  while(state.undo.reduce((n,s)=>n+historyBytes(s),0)>192*1024*1024&&state.undo.length>1)state.undo.shift();
 }
 renderer.domElement.addEventListener('pointermove', moveSurfaceBrush);
 renderer.domElement.addEventListener('pointermove', moveImageLayer);
@@ -620,12 +625,12 @@ renderer.domElement.addEventListener('pointercancel', ()=>{finishImageMove(true)
 function projectData() {
   return {schema: 'wows-skin-workshop/v1', source: state.source, activeDoc: state.activeDoc,
     documents: [...state.docs.values()].filter(doc => doc.layers.length).map(doc => ({key: doc.key, name: doc.name, width: doc.base.width, height: doc.base.height, target: doc.target, layers: doc.layers.map(serializeLayer)})),
-    hiddenParts: state.meshes.filter(m => !m.visible).map(m => m.name), xml: state.xml ? new XMLSerializer().serializeToString(state.xml) : null, xmlName: state.xmlName, xmlDirty: state.xmlDirty};
+    hiddenParts: state.meshes.filter(m => !m.visible).map(m => m.name), xml: state.xml ? serializeCamouflageXML(state.xml) : null, xmlName: state.xmlName, xmlDirty: state.xmlDirty, xmlLabels:state.xmlLabels,xmlLabelLanguage:language};
 }
 async function projectDataAsync(){
   await Promise.all([...pendingProjections]);
   // Freeze editable raster buffers before asynchronous PNG encoding.
-  const result={schema:'wows-skin-workshop/v1',source:state.source,activeDoc:state.activeDoc,documents:[],hiddenParts:state.meshes.filter(m=>!m.visible).map(m=>m.name),xml:state.xml?new XMLSerializer().serializeToString(state.xml):null,xmlName:state.xmlName,xmlDirty:state.xmlDirty};
+  const result={schema:'wows-skin-workshop/v1',source:state.source,activeDoc:state.activeDoc,documents:[],hiddenParts:state.meshes.filter(m=>!m.visible).map(m=>m.name),xml:state.xml?serializeCamouflageXML(state.xml):null,xmlName:state.xmlName,xmlDirty:state.xmlDirty,xmlLabels:state.xmlLabels,xmlLabelLanguage:language};
   const docs=[...state.docs.values()].filter(d=>d.layers.length).map(d=>({key:d.key,name:d.name,width:d.base.width,height:d.base.height,target:d.target,layers:d.layers.map(row=>({...row}))}));
   for(const doc of docs){doc.layers=await Promise.all(doc.layers.map(serializeLayerAsync));result.documents.push(doc);}return result;
 }
@@ -652,7 +657,7 @@ async function openProject(value) {
     await installModel(object, source, prepared);
     for (const doc of state.docs.values()) if (doc.layers.length) draw(doc);
     for (const mesh of state.meshes) if (value.hiddenParts?.includes(mesh.name)) mesh.visible = false;
-    state.xml = xml; state.xmlName = value.xmlName || 'camouflages.xml'; state.xmlDirty = !!value.xmlDirty;
+    state.xml = xml; state.xmlName = value.xmlName || 'camouflages.xml'; state.xmlDirty = !!value.xmlDirty;state.xmlLabels=value.xmlLabelLanguage===language?(value.xmlLabels||{}):{};
     selectDoc(state.docs.has(value.activeDoc) ? value.activeDoc : state.activeDoc); renderParts();
     state.dirty = false; $('save-state').textContent = '프로젝트 복원됨'; message('프로젝트를 복원했어요. 원본 모델 폴더는 계속 필요해요.');
   } finally { busy(false); }
@@ -674,9 +679,21 @@ async function saveDraft() {
 async function readDraft() {
   try { const db = await draftDB(); try { return await new Promise((resolve, reject) => { const req = db.transaction('drafts').objectStore('drafts').get('latest'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); } finally { db.close(); } } catch { return null; }
 }
-function parseXML(text) { if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw Error('외부 엔터티 선언이 있는 XML은 지원하지 않아요.'); const xml = new DOMParser().parseFromString(text, 'application/xml'); if (xml.querySelector('parsererror')) throw Error('XML 문법을 확인하세요.'); if (!xml.getElementsByTagName('colorScheme').length) throw Error('colorScheme 항목이 없는 XML이에요.'); return xml; }
 function schemes() { return state.xml ? [...state.xml.getElementsByTagName('colorScheme')] : []; }
-function renderSchemes() { $('scheme-select').replaceChildren(...schemes().map((node, i) => new Option(node.getElementsByTagName('name')[0]?.textContent.trim() || '색상표 ' + i, String(i)))); renderColors(); }
+function renderSchemes() {
+  const items = schemes();
+  $('scheme-select').replaceChildren(...(items.length
+    ? items.map((node, i) => {
+      const code=node.getElementsByTagName('name')[0]?.textContent.trim(),names=state.xmlLabels?.[code]||[];
+      const option=new Option(names.length?names.slice(0,3).join(' / ')+(names.length>3?` (+${names.length-3})`:'')+` · ${code}`:code||t('camoUnnamed',{number:i+1}),String(i));
+      if(names.length)option.title=names.join(' / ')+` · ${code}`;
+      return option;
+    })
+    : [new Option(t('camoLoadFirst'), '')]));
+  $('scheme-select').disabled = !items.length;
+  $('save-xml').disabled = !items.length;
+  renderColors();
+}
 function renderColors() {
   const node = schemes()[Number($('scheme-select').value)]; $('camo-colors').replaceChildren();
   if (!node) return;
@@ -702,7 +719,7 @@ async function exportWork() {
   await Promise.all([...pendingProjections]);
   const payload = {format: $('export-format').value, compression: $('dds-format').value, mipmaps: $('mipmaps').checked,
     textures: [...state.docs.values()].filter(d => d.layers.length).map(doc => ({name: doc.name, target: doc.target, data: composite(doc, false).toDataURL('image/png')})),
-    xml: state.xmlDirty ? new XMLSerializer().serializeToString(state.xml) : null, xmlName: state.xmlName};
+    xml: state.xmlDirty ? serializeCamouflageXML(state.xml) : null, xmlName: state.xmlName};
   busy(true, '텍스처와 밉맵을 만드는 중이에요.');
   try { const response = await api('export', payload); download(await response.blob(), (state.source?.name || 'wows') + '-skin.zip'); $('export-dialog').close(); message('편집 결과 ZIP을 저장했어요. 게임 원본과 출력 경로·형식을 비교하세요.'); }
   finally { busy(false); draw(); }
@@ -784,11 +801,47 @@ $('uv-overlay').onchange = drawUV; $('compare').onchange = () => { for (const do
 $('home-view').onclick = () => focusView(); document.querySelectorAll('[data-axis]').forEach(button => button.onclick = () => focusView(button.dataset.axis));
 $('wireframe').onclick = () => { const on = !$('wireframe').classList.contains('active'); $('wireframe').classList.toggle('active', on); for (const mesh of state.meshes) for (const m of [].concat(mesh.material)) m.wireframe = on; invalidate(); };
 $('zoom-fit').onclick = () => { zoom = 'fit'; fitTexture(); }; $('zoom-in').onclick = () => { zoom = zoom === 'fit' ? .5 : Math.min(4, zoom * 1.4); fitTexture(); }; $('zoom-out').onclick = () => { zoom = zoom === 'fit' ? .25 : Math.max(.05, zoom / 1.4); fitTexture(); };
-$('camo-open').onclick = () => { renderSchemes(); $('camo-dialog').showModal(); }; $('load-xml').onclick = () => $('xml-file').click();
-$('xml-file').onchange = action(async event => { const file = event.target.files[0]; event.target.value = ''; if (!file) return; if (file.size > 8 * 1024 * 1024) throw Error('XML은 8 MiB 이하로 선택하세요.'); state.xml = parseXML(await file.text()); state.xmlName = file.name; state.xmlDirty = false; renderSchemes(); });
-$('scheme-select').onchange = renderColors; $('save-xml').onclick = action(() => { if (!state.xml) throw Error('위장 XML을 먼저 열어주세요.'); download(new Blob([new XMLSerializer().serializeToString(state.xml)], {type: 'application/xml'}), state.xmlName); });
+$('camo-open').onclick = action(async () => {
+  renderSchemes(); $('camo-dialog').showModal();
+  $('load-game-xml').textContent = t('camoGameLoad');
+  $('load-xml').textContent = t('camoFileLoad');
+  $('load-game-xml').disabled = true;
+  try {
+    const {games} = await (await api('games')).json();
+    $('camo-game').replaceChildren(...games.map(g => new Option(`${g.folder} / ${g.build}`, g.id)));
+    const selected = games.find(g => g.folder === state.source?.gameFolder || g.id === state.source?.game)
+      || games.find(g => g.id === shipLibrary.game);
+    if (selected) $('camo-game').value = selected.id;
+    $('load-game-xml').disabled = !games.length;
+    if (!games.length) $('camo-status').textContent = t('camoNoGame');
+  } catch (error) { $('camo-status').textContent = t(error.message); throw error; }
+});
+$('load-game-xml').onclick = action(async () => {
+  if (state.xmlDirty && !confirm(t('camoReplace'))) return;
+  $('load-game-xml').disabled = true; $('camo-game').disabled = true; $('load-xml').disabled = true;
+  $('camo-status').textContent = t('camoReading');
+  try {
+    const result = await (await api('camouflage-xml', {game: $('camo-game').value,language})).json();
+    const xml = parseXML(result.xml);
+    state.xml = xml; state.xmlName = result.name; state.xmlDirty = false; state.xmlLabels=result.labels||{};renderSchemes();
+    $('camo-status').textContent = t('camoReady', {count: schemes().length, folder: result.game.folder, build: result.game.build});
+  } catch (error) { $('camo-status').textContent = t(error.message); throw error; }
+  finally { $('load-game-xml').disabled = !$('camo-game').value; $('camo-game').disabled = false; $('load-xml').disabled = false; }
+});
+$('load-xml').onclick = () => { if (!state.xmlDirty || confirm(t('camoReplace'))) $('xml-file').click(); };
+$('xml-file').onchange = action(async event => {
+  const file=event.target.files[0];event.target.value='';if(!file)return;
+  if(file.size>MAX_CAMOUFLAGE_XML_BYTES){$('camo-status').textContent=t('xmlTooLarge');throw Error(t('xmlTooLarge'));}
+  let xml;try{xml=parseXML(await file.text());}catch(error){$('camo-status').textContent=error.message;throw error;}state.xml=xml;state.xmlName=file.name;state.xmlDirty=false;state.xmlLabels={};renderSchemes();$('camo-status').textContent=file.name;
+  if($('camo-game').value){
+    try{const result=await(await api('camouflage-labels',{game:$('camo-game').value,language})).json();if(state.xml===xml){const selected=$('scheme-select').value;state.xmlLabels=result.labels;renderSchemes();$('scheme-select').value=selected;renderColors();}}
+    catch(error){if(state.xml===xml)$('camo-status').textContent=file.name+' · '+t('camoNamesUnavailable');}
+  }
+});
+$('scheme-select').onchange = renderColors; $('save-xml').onclick = action(() => { if (!state.xml) throw Error('위장 XML을 먼저 열어주세요.'); download(new Blob([serializeCamouflageXML(state.xml)], {type: 'application/xml'}), state.xmlName); });
 const textInput=target=>!!target.closest?.('input,textarea,select,[contenteditable="true"]');
 let copiedLayer=null;
+document.addEventListener('keyup',event=>{if(event.key==='Shift')straightAngle.hidden=true;});
 document.addEventListener('copy',event=>{
   if(textInput(event.target)||!layer()||loading||projectionDrag||stroke)return;
   if(pendingProjections.size){message(t('waitForImageLayer'));return;}

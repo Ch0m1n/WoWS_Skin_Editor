@@ -10,6 +10,29 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import game_library as g
 
 class LibraryTests(unittest.TestCase):
+    def test_camouflage_reads_original_archive_only(self):
+        from types import SimpleNamespace
+        entry = SimpleNamespace(unpacked_size=100)
+        info = {'id':'camo-test','folder':str(Path(self.storage.name)),'build':123}
+        with patch.dict(g.GAMES, {'camo-test': info}), patch.object(g,'install_info',return_value=info), \
+             patch('game_archive.read_archive_index',return_value=(123,{'/camouflages.xml':entry})), \
+             patch('game_archive.extract_entry',return_value=b'\xef\xbb\xbf<data/>') as read, patch.object(g,'camouflage_labels',return_value={}):
+            result = g.camouflage_xml('camo-test')
+            self.assertEqual(result['xml'],'<data/>')
+            self.assertEqual(result['name'],'camouflages.xml')
+            read.assert_called_once_with(Path(info['folder']),entry)
+            self.assertEqual(list(Path(self.storage.name).iterdir()),[])
+
+    def test_camouflage_missing_or_oversized_is_rejected(self):
+        from types import SimpleNamespace
+        info = {'id':'camo-test','folder':str(Path(self.storage.name)),'build':123,'entries':{}}
+        with patch.dict(g.GAMES, {'camo-test':info}), patch.object(g,'install_info',return_value=info), \
+             patch('game_archive.extract_entry') as read:
+            with self.assertRaises(FileNotFoundError): g.camouflage_xml('camo-test')
+            info['entries']['/camouflages.xml'] = SimpleNamespace(unpacked_size=33*1024*1024)
+            with self.assertRaises(ValueError): g.camouflage_xml('camo-test')
+            read.assert_not_called()
+
     def setUp(self):
         self.storage=tempfile.TemporaryDirectory(dir=Path(__file__).parent)
         self.home_patch=patch.object(g.project_store,'HOME',Path(self.storage.name));self.home_patch.start()

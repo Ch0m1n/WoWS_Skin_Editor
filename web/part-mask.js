@@ -33,5 +33,9 @@ export function setupPartMask({state,current,category,paintStroke,renderer,pick}
     diameter=Math.max(2,Math.min(300,diameter));circle.hidden=false;circle.style.width=circle.style.height=diameter+'px';circle.style.left=event.clientX-rect.left-diameter/2+'px';circle.style.top=event.clientY-rect.top-diameter/2+'px';
   }
   renderer.domElement.addEventListener('pointermove',e=>cursor(e,true));renderer.domElement.addEventListener('pointerleave',()=>{$('brush-cursor-3d').hidden=true;});$('texture-canvas').addEventListener('pointermove',e=>cursor(e,false));$('texture-canvas').addEventListener('pointerleave',()=>{$('brush-cursor-2d').hidden=true;});
-  return {paint};
+  function applyRaster(ctx,raster,region,erase){
+    const activeMask=mask(current());if(activeMask){const p=raster.getContext('2d');p.save();p.globalCompositeOperation='destination-in';p.drawImage(activeMask,region.x,region.y,region.w,region.h,0,0,region.w,region.h);p.restore();}
+    ctx.save();ctx.globalCompositeOperation=erase?'destination-out':'source-over';ctx.drawImage(raster,region.x,region.y);ctx.restore();
+  }
+  return {paint,applyRaster};
 }
